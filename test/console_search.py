@@ -1,8 +1,12 @@
 import argparse
 import json
+from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import urlopen
+
+
+DEFAULT_OUTPUT = Path(__file__).resolve().parent / "output" / "search_results.txt"
 
 
 def search_api(
@@ -44,6 +48,12 @@ def search_api(
     return payload
 
 
+def save_results(output_file: Path, results: list[str]) -> None:
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    with output_file.open("a", encoding="utf-8") as file:
+        file.write("\n".join(results) + "\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Console client để kiểm tra API tìm kiếm web."
@@ -57,9 +67,9 @@ def main() -> None:
         "--max-results",
         type=int,
         choices=range(1, 51),
-        default=10,
+        default=1,
         metavar="1-50",
-        help="Số kết quả muốn lấy (mặc định: 10)",
+        help="Số kết quả muốn lấy (mặc định: 1)",
     )
     parser.add_argument("--region", default="wt-wt", help="Mã vùng tìm kiếm")
     parser.add_argument(
@@ -67,6 +77,12 @@ def main() -> None:
         choices=("off", "moderate", "strict"),
         default="moderate",
         help="Chế độ SafeSearch",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=DEFAULT_OUTPUT,
+        help=f"File văn bản để lưu các URL tìm được (mặc định: {DEFAULT_OUTPUT})",
     )
     args = parser.parse_args()
 
@@ -95,6 +111,11 @@ def main() -> None:
         if not results:
             print("Không tìm thấy kết quả.")
             continue
+
+        try:
+            save_results(args.output, results)
+        except OSError as exc:
+            print(f"Lỗi khi lưu liên kết vào '{args.output}': {exc}")
 
         for index, link in enumerate(results, start=1):
             print(f"{index}. {link}")

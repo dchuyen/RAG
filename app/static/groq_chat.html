@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#10141d">
+    <title>RAG · Groq Chat</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #10141d;
+        color: #eef2f8;
+        font-synthesis: none;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        background:
+          radial-gradient(ellipse at 50% -20%, #263c58 0, transparent 55%),
+          #10141d;
+      }
+
+      .shell {
+        width: min(900px, 100%);
+        min-height: 100vh;
+        margin: 0 auto;
+        padding: 32px 24px 24px;
+        display: flex;
+        flex-direction: column;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding-bottom: 24px;
+        border-bottom: 1px solid #29313e;
+      }
+
+      .brand { display: flex; align-items: center; gap: 14px; }
+      .logo {
+        width: 42px;
+        height: 42px;
+        display: grid;
+        place-items: center;
+        border-radius: 14px;
+        background: linear-gradient(145deg, #a4f5c5, #61cba0);
+        color: #10251c;
+        font-weight: 900;
+        font-size: 19px;
+      }
+
+      h1 { margin: 0; font-size: 18px; letter-spacing: -.02em; }
+      .subtitle { margin: 4px 0 0; color: #98a5b8; font-size: 13px; }
+
+      button, select, textarea { font: inherit; }
+      button {
+        border: 0;
+        cursor: pointer;
+      }
+
+      .clear {
+        padding: 9px 13px;
+        border: 1px solid #384354;
+        border-radius: 10px;
+        background: #171e29;
+        color: #d7dfeb;
+      }
+      .clear:hover { background: #202a38; }
+
+      .conversation {
+        flex: 1;
+        min-height: 300px;
+        padding: 28px 0;
+      }
+
+      .empty {
+        height: 100%;
+        min-height: 300px;
+        display: grid;
+        place-content: center;
+        text-align: center;
+        color: #a9b5c6;
+      }
+      .empty strong { color: #eef2f8; font-size: 20px; font-weight: 650; }
+      .empty p { margin: 8px 0 0; font-size: 14px; }
+
+      .message {
+        display: flex;
+        gap: 12px;
+        margin: 0 0 22px;
+        align-items: flex-start;
+      }
+      .avatar {
+        flex: 0 0 32px;
+        height: 32px;
+        display: grid;
+        place-items: center;
+        border-radius: 11px;
+        background: #252f3d;
+        color: #a4f5c5;
+        font-size: 12px;
+        font-weight: 750;
+      }
+      .message.user .avatar { background: #294d42; color: #c5f9da; }
+      .bubble {
+        max-width: min(720px, calc(100% - 44px));
+        padding: 12px 15px;
+        border: 1px solid #2a3442;
+        border-radius: 4px 15px 15px;
+        background: #171e29;
+        line-height: 1.65;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .message.user .bubble {
+        border-color: #315846;
+        background: #1b3029;
+      }
+      .message.error .bubble { border-color: #74434a; color: #ffb9bd; }
+
+      .composer {
+        padding: 16px;
+        border: 1px solid #354050;
+        border-radius: 17px;
+        background: #171e29;
+        box-shadow: 0 18px 50px #0003;
+      }
+      .composer textarea {
+        width: 100%;
+        min-height: 54px;
+        max-height: 180px;
+        resize: vertical;
+        padding: 5px 2px 12px;
+        border: 0;
+        outline: 0;
+        background: transparent;
+        color: #eef2f8;
+        line-height: 1.55;
+      }
+      textarea::placeholder { color: #8491a4; }
+      .controls {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding-top: 12px;
+        border-top: 1px solid #2a3442;
+      }
+      .model-label { color: #98a5b8; font-size: 12px; }
+      select {
+        max-width: min(430px, 58vw);
+        padding: 7px 9px;
+        border: 1px solid #354050;
+        border-radius: 9px;
+        background: #10141d;
+        color: #e7edf5;
+        font-size: 12px;
+      }
+      .hint { margin-left: auto; color: #8491a4; font-size: 11px; }
+      .send {
+        min-width: 82px;
+        padding: 9px 15px;
+        border-radius: 10px;
+        background: #a4f5c5;
+        color: #10251c;
+        font-weight: 750;
+      }
+      .send:hover { background: #baf9d3; }
+      .send:disabled { cursor: wait; opacity: .6; }
+      footer { padding-top: 13px; color: #778498; text-align: center; font-size: 11px; }
+
+      @media (max-width: 600px) {
+        .shell { padding: 20px 14px 14px; }
+        header { padding-bottom: 17px; }
+        .controls { flex-wrap: wrap; }
+        .hint { display: none; }
+        .send { margin-left: auto; }
+        .composer { padding: 12px; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <div class="brand">
+          <div class="logo" aria-hidden="true">R</div>
+          <div>
+            <h1>RAG · Groq Chat</h1>
+            <p class="subtitle">Trò chuyện và thử tìm kiếm ngữ nghĩa</p>
+          </div>
+        </div>
+        <button class="clear" id="clear" type="button">Cuộc trò chuyện mới</button>
+      </header>
+
+      <section class="conversation" id="conversation" aria-live="polite">
+        <div class="empty" id="empty">
+          <div>
+            <strong>Bạn muốn tìm hiểu điều gì?</strong>
+            <p>Gửi tin nhắn để bắt đầu trò chuyện với Groq.</p>
+          </div>
+        </div>
+      </section>
+
+      <form class="composer" id="chat-form">
+        <textarea id="prompt" rows="2" placeholder="Nhập tin nhắn..." aria-label="Tin nhắn" required></textarea>
+        <div class="controls">
+          <label class="model-label" for="model">Model</label>
+          <select id="model">
+            <option value="qwen/qwen3.8-27b">qwen/qwen3.8-27b</option>
+            <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile</option>
+          </select>
+          <span class="hint">Enter để gửi · Shift+Enter xuống dòng</span>
+          <button class="send" id="send" type="submit">Gửi</button>
+        </div>
+      </form>
+      <footer>API key được giữ ở máy chủ; giao diện này chỉ gọi API của ứng dụng.</footer>
+    </main>
+
+    <script>
+      const form = document.querySelector("#chat-form");
+      const promptInput = document.querySelector("#prompt");
+      const conversation = document.querySelector("#conversation");
+      const emptyState = document.querySelector("#empty");
+      const sendButton = document.querySelector("#send");
+      const modelSelect = document.querySelector("#model");
+      const history = [];
+
+      function addMessage(role, content, isError = false) {
+        emptyState.hidden = true;
+        const row = document.createElement("article");
+        row.className = `message ${role}${isError ? " error" : ""}`;
+
+        const avatar = document.createElement("div");
+        avatar.className = "avatar";
+        avatar.setAttribute("aria-hidden", "true");
+        avatar.textContent = role === "user" ? "B" : isError ? "!" : "G";
+
+        const bubble = document.createElement("div");
+        bubble.className = "bubble";
+        bubble.textContent = content;
+        row.append(avatar, bubble);
+        conversation.append(row);
+        row.scrollIntoView({ behavior: "smooth", block: "end" });
+        return row;
+      }
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const content = promptInput.value.trim();
+        if (!content || sendButton.disabled) return;
+
+        history.push({ role: "user", content });
+        addMessage("user", content);
+        promptInput.value = "";
+        sendButton.disabled = true;
+        sendButton.textContent = "...";
+        const pending = addMessage("assistant", "Đang chờ Groq trả lời...");
+
+        try {
+          const response = await fetch("/chat/groq", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              messages: history,
+              model: modelSelect.value,
+              temperature: 0.7,
+            }),
+          });
+          const result = await response.json();
+          if (!response.ok) {
+            const detail = typeof result.detail === "string" ? result.detail : JSON.stringify(result.detail);
+            throw new Error(detail || `HTTP ${response.status}`);
+          }
+          if (typeof result.message !== "string") {
+            throw new Error("Phản hồi API không đúng định dạng chat.");
+          }
+          history.push({ role: "assistant", content: result.message });
+          pending.querySelector(".bubble").textContent = result.message;
+        } catch (error) {
+          history.pop();
+          pending.remove();
+          addMessage("assistant", `Không gửi được tin nhắn: ${error.message}`, true);
+        } finally {
+          sendButton.disabled = false;
+          sendButton.textContent = "Gửi";
+          promptInput.focus();
+        }
+      });
+
+      promptInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          form.requestSubmit();
+        }
+      });
+
+      document.querySelector("#clear").addEventListener("click", () => {
+        history.length = 0;
+        conversation.querySelectorAll(".message").forEach((message) => message.remove());
+        emptyState.hidden = false;
+        promptInput.focus();
+      });
+    </script>
+  </body>
+</html>

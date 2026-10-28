@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_MODEL = "intfloat/multilingual-e5-small"
+DEFAULT_INPUT = Path(__file__).resolve().parent / "output" / "scraped_data.txt"
+DEFAULT_OUTPUT = Path(__file__).resolve().parent / "output" / "scraped_data_processed.json"
 
 
 def load_records(path: Path) -> list[dict[str, Any]]:
@@ -118,25 +120,21 @@ def split_text_by_tokens(text: str, tokenizer: Any, max_tokens: int) -> list[str
     return chunks
 
 
-def record_with_paragraph_fields(
+def records_with_chunk_metadata(
     record: dict[str, Any],
     index: int,
     tokenizer: Any,
     max_tokens: int,
-) -> dict[str, Any]:
+) -> list[dict[str, Any]]:
     text = record.get("text", "")
     if not isinstance(text, str):
         raise ValueError(f"Trường 'text' của bản ghi {index} phải là chuỗi.")
 
-    paragraphs = split_text_by_tokens(text, tokenizer, max_tokens)
-    processed_record = {key: value for key, value in record.items() if key != "text"}
-    processed_record.update(
-        {
-            f"paragraph_{paragraph_index}": paragraph
-            for paragraph_index, paragraph in enumerate(paragraphs, start=1)
-        }
-    )
-    return processed_record
+    metadata = {key: value for key, value in record.items() if key != "text"}
+    return [
+        {"text": chunk, "metadata": metadata}
+        for chunk in split_text_by_tokens(text, tokenizer, max_tokens)
+    ]
 
 
 def main() -> int:
@@ -146,14 +144,14 @@ def main() -> int:
     parser.add_argument(
         "--input",
         type=Path,
-        default=Path("scraped_data.txt"),
-        help="File JSON đầu vào (mặc định: scraped_data.txt).",
+        default=DEFAULT_INPUT,
+        help=f"File JSON đầu vào (mặc định: {DEFAULT_INPUT}).",
     )
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("scraped_data_processed.json"),
-        help="File JSON đầu ra (mặc định: scraped_data_processed.json).",
+        default=DEFAULT_OUTPUT,
+        help=f"File JSON đầu ra (mặc định: {DEFAULT_OUTPUT}).",
     )
     parser.add_argument(
         "--model",
@@ -185,8 +183,11 @@ def main() -> int:
         )
 
     processed_records = [
-        record_with_paragraph_fields(record, index, tokenizer, args.max_tokens)
+        chunk_record
         for index, record in enumerate(records, start=1)
+        for chunk_record in records_with_chunk_metadata(
+            record, index, tokenizer, args.max_tokens
+        )
     ]
 
     args.output.parent.mkdir(parents=True, exist_ok=True)

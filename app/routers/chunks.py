@@ -1,3 +1,5 @@
+from typing import Any
+
 from fastapi import APIRouter, HTTPException
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pydantic import BaseModel, Field
@@ -11,6 +13,10 @@ class ChunkRequest(BaseModel):
         min_length=1,
         description="Văn bản cần cắt thành các đoạn nhỏ.",
     )
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Metadata được gắn với từng chunk.",
+    )
     chunk_size: int = Field(
         default=1000,
         gt=0,
@@ -23,9 +29,14 @@ class ChunkRequest(BaseModel):
     )
 
 
+class ChunkItem(BaseModel):
+    text: str
+    metadata: dict[str, Any]
+
+
 class ChunkResponse(BaseModel):
     total_chunks: int
-    chunks: list[str]
+    chunks: list[ChunkItem]
 
 
 @router.post("/split", response_model=ChunkResponse)
@@ -49,4 +60,7 @@ def split_into_chunks(payload: ChunkRequest) -> ChunkResponse:
         separators=["\n\n", "\n", " ", ""],
     )
     chunks = splitter.split_text(cleaned_text)
-    return ChunkResponse(total_chunks=len(chunks), chunks=chunks)
+    chunk_items = [
+        ChunkItem(text=chunk, metadata=payload.metadata.copy()) for chunk in chunks
+    ]
+    return ChunkResponse(total_chunks=len(chunk_items), chunks=chunk_items)

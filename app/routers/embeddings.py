@@ -1,5 +1,4 @@
 from functools import lru_cache
-from typing import Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
@@ -47,33 +46,47 @@ def get_embedding_model(model_name: str):
         ) from exc
 
 
-@router.post("", response_model=EmbedResponse)
-def create_embeddings(payload: EmbedRequest) -> EmbedResponse:
-    """
-    Tạo embedding vector cho danh sách văn bản.
-    """
-    cleaned_texts = [text.strip() for text in payload.texts if text and text.strip()]
+def encode_texts(
+    texts: list[str],
+    model_name: str = DEFAULT_MODEL,
+    normalize: bool = True,
+) -> list[list[float]]:
+    cleaned_texts = [text.strip() for text in texts if text and text.strip()]
     if not cleaned_texts:
         raise HTTPException(
             status_code=422,
             detail="Danh sách văn bản không được để trống hoặc chỉ chứa khoảng trắng.",
         )
 
-    model = get_embedding_model(payload.model)
+    model = get_embedding_model(model_name)
 
     try:
         vectors = model.encode(
             cleaned_texts,
-            normalize_embeddings=payload.normalize,
+            normalize_embeddings=normalize,
             show_progress_bar=False,
         )
     except Exception as exc:
         raise HTTPException(
             status_code=500,
-            detail=f"Lỗi trong quá trình tính toán embedding: {str(exc)}",
+            detail=f"Lỗi trong quá trình tính toán embedding: {exc}",
         ) from exc
 
     embeddings_list = vectors.tolist() if hasattr(vectors, "tolist") else [list(v) for v in vectors]
+    if len(embeddings_list) != len(cleaned_texts):
+        raise HTTPException(
+            status_code=500,
+            detail="Số lượng embedding trả về không khớp với số văn bản đầu vào.",
+        )
+    return embeddings_list
+
+
+@router.post("", response_model=EmbedResponse)
+def create_embeddings(payload: EmbedRequest) -> EmbedResponse:
+    """
+    Tạo embedding vector cho danh sách văn bản.
+    """
+    embeddings_list = encode_texts(payload.texts, payload.model, payload.normalize)
     dim = len(embeddings_list[0]) if embeddings_list else 0
 
     return EmbedResponse(
@@ -97,16 +110,10 @@ def create_single_embedding(
     if not cleaned_text:
         raise HTTPException(status_code=422, detail="Văn bản không được để trống.")
 
-    model_instance = get_embedding_model(model)
-    vector = model_instance.encode(
-        [cleaned_text],
-        normalize_embeddings=normalize,
-        show_progress_bar=False,
-    )
-    res_list = vector.tolist() if hasattr(vector, "tolist") else [list(v) for v in vector]
+    embedding = encode_texts([cleaned_text], model, normalize)[0]
 
     return {
         "model": model,
-        "dimension": len(res_list[0]) if res_list else 0,
-        "embedding": res_list[0],
+        "dimension": len(embedding),
+        "embedding": embedding,
     }
