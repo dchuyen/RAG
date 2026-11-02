@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.services import embeddings as embedding_service
 from app.routers import (
     chat_ui,
     chunks,
@@ -20,8 +21,8 @@ from app.routers import (
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     await asyncio.to_thread(
-        embeddings.get_embedding_model,
-        embeddings.DEFAULT_MODEL,
+        embedding_service.get_embedding_model,
+        embedding_service.DEFAULT_MODEL,
     )
     yield
 

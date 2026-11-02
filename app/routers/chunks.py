@@ -1,8 +1,9 @@
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from fastapi import APIRouter
 from pydantic import BaseModel, Field
+
+from app.services.chunks import split_text
 
 router = APIRouter(prefix="/chunks", tags=["chunks"])
 
@@ -41,26 +42,10 @@ class ChunkResponse(BaseModel):
 
 @router.post("/split", response_model=ChunkResponse)
 def split_into_chunks(payload: ChunkRequest) -> ChunkResponse:
-    """Cắt văn bản thành các chunk, ưu tiên giữ nguyên ranh giới đoạn văn."""
-    cleaned_text = payload.text.strip()
-    if not cleaned_text:
-        raise HTTPException(
-            status_code=422,
-            detail="Văn bản không được để trống hoặc chỉ chứa khoảng trắng.",
-        )
-    if payload.chunk_overlap >= payload.chunk_size:
-        raise HTTPException(
-            status_code=422,
-            detail="chunk_overlap phải nhỏ hơn chunk_size.",
-        )
-
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=payload.chunk_size,
-        chunk_overlap=payload.chunk_overlap,
-        separators=["\n\n", "\n", " ", ""],
+    chunks = split_text(
+        payload.text,
+        payload.metadata,
+        payload.chunk_size,
+        payload.chunk_overlap,
     )
-    chunks = splitter.split_text(cleaned_text)
-    chunk_items = [
-        ChunkItem(text=chunk, metadata=payload.metadata.copy()) for chunk in chunks
-    ]
-    return ChunkResponse(total_chunks=len(chunk_items), chunks=chunk_items)
+    return ChunkResponse(total_chunks=len(chunks), chunks=chunks)
