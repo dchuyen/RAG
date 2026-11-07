@@ -114,7 +114,7 @@ def main() -> int:
         help="Nội dung tìm kiếm; nếu bỏ trống, chương trình sẽ hỏi.",
     )
     parser.add_argument("--api-url", default=DEFAULT_API_URL, help="Địa chỉ API FastAPI")
-    parser.add_argument("--max-results", type=int, default=1, choices=range(1, 51))
+    parser.add_argument("--max-results", type=int, default=3, choices=range(1, 51))
     parser.add_argument("--region", default="wt-wt", help="Mã vùng tìm kiếm")
     parser.add_argument(
         "--safesearch",

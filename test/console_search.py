@@ -67,9 +67,9 @@ def main() -> None:
         "--max-results",
         type=int,
         choices=range(1, 51),
-        default=1,
+        default=5,
         metavar="1-50",
-        help="Số kết quả muốn lấy (mặc định: 1)",
+        help="Số kết quả muốn lấy (mặc định: 5)",
     )
     parser.add_argument("--region", default="wt-wt", help="Mã vùng tìm kiếm")
     parser.add_argument(

@@ -8,11 +8,12 @@ from app.services.embeddings import DEFAULT_MODEL, encode_texts
 from app.services.ranking import prepare_embedding_texts, rank_with_embeddings
 from app.services.scrape import scrape_webpage
 from app.services.search import search_web
+from app.services.source_merge import merge_ranked_documents_by_source
 
 
 def semantic_search(
     query: str,
-    max_results: int = 1,
+    max_results: int = 3,
     region: str = "wt-wt",
     safesearch: Literal["off", "moderate", "strict"] = "moderate",
     chunk_size: int = 1000,
@@ -105,7 +106,9 @@ def semantic_search(
     )
     embedding_seconds = perf_counter() - embedding_started
     ranking_started = perf_counter()
-    ranked = rank_with_embeddings(cleaned_query, model, documents, embeddings)
+    ranked = merge_ranked_documents_by_source(
+        rank_with_embeddings(cleaned_query, model, documents, embeddings)
+    )
     ranking_seconds = perf_counter() - ranking_started
 
     return {

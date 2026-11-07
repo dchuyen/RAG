@@ -9,11 +9,22 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload
+```
 
 Open <http://127.0.0.1:8000/docs> for the interactive API documentation.
 The default embedding model is loaded during server startup, so the first
 startup may take longer while the model is downloaded. The server accepts
 requests after the model has loaded.
+
+## Open the chat interface
+
+Configure `GEMINI_API_KEY` in `.env`, start the API with `uvicorn app.main:app --reload`,
+then open <http://127.0.0.1:8000/chat> in your browser.
+
+If the chat reports `HTTP 429`, Gemini is rate-limiting requests or the account
+has reached a usage limit. Wait before retrying, then check the usage and limits
+for your Google AI account. A response that triggers web search can make two
+Gemini requests in one chat turn.
 
 ## Test search from the console
 
@@ -93,12 +104,12 @@ Then test the embedding endpoint:
 python test/console_embed.py
 ```
 
-## Chat with Groq from the console
+## Chat with Gemini from the console
 
-Configure `GROQ_API_KEY` in `.env`, start the API, then run:
+Configure `GEMINI_API_KEY` in `.env`, start the API, then run:
 
 ```bash
-python test/console_groq.py
+python test/console_gemini.py
 ```
 
 Enter messages at the prompt. The client keeps the conversation context for
@@ -106,8 +117,8 @@ follow-up messages; enter `/exit` to end the chat. You can override the API
 address, model, temperature, or token limit:
 
 ```bash
-python test/console_groq.py --api-url http://127.0.0.1:8000 \
-  --model llama-3.3-70b-versatile --temperature 0.7 --max-tokens 500
+python test/console_gemini.py --api-url http://127.0.0.1:8000 \
+  --model gemini-2.5-flash --temperature 0.7 --max-tokens 500
 ```
 
 Or test with a custom Vietnamese sentence:
@@ -186,8 +197,8 @@ copied from the request. If omitted, `metadata` is an empty object.
 
 - `GET /` — welcome message
 - `GET /health` — health check
-- `GET /chat` — web chat UI for trying the Groq chat endpoint
-- `POST /chat/groq` — send a chat completion request to Groq (requires `GROQ_API_KEY`)
+- `GET /chat` — web chat UI for trying the Gemini chat endpoint
+- `POST /chat/gemini` — send a chat request to Gemini (requires `GEMINI_API_KEY`)
 - `GET /search?q=FastAPI&max_results=10` — search the web with DuckDuckGo
 - `GET /scrape?url=https%3A%2F%2Fwww.python.org%2Fabout%2F` — extract webpage text and metadata with Trafilatura
 - `POST /embeddings` — compute dense vector embeddings for a list of texts (default: `intfloat/multilingual-e5-small`, 384 dimensions)
@@ -196,39 +207,35 @@ copied from the request. If omitted, `metadata` is an empty object.
 - `POST /semantic-search` — search the web, scrape pages, split text into chunks, embed, and rank by relevance
 - `POST /chunks/split` — split text into paragraph-aware chunks using LangChain
 
-Set `GROQ_API_KEY` in a local `.env` file before starting the API to use the chat
-endpoint. Copy `.env.example` to `.env` and replace the placeholder with your
-Groq API key. `.env` is excluded from Git. The endpoint defaults to
-`llama-3.3-70b-versatile`; the model, temperature, and maximum output tokens can
+Set `GEMINI_API_KEY` in a local `.env` file before starting the API to use the chat
+endpoint. Add your Gemini API key to `.env`; `.env` is excluded from Git. The
+endpoint defaults to `gemini-2.5-flash`; the model, temperature, and maximum output tokens can
 be supplied in the request:
 
 ```bash
-cp .env.example .env
-# Edit .env and set GROQ_API_KEY to your key.
+# Add GEMINI_API_KEY=your-key to .env.
 uvicorn app.main:app --reload
 ```
 
 Then send a chat request:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/chat/groq \
+curl -X POST http://127.0.0.1:8000/chat/gemini \
   -H "Content-Type: application/json" \
   -d '{"messages":[{"role":"user","content":"Xin chào!"}],"temperature":0.7}'
 ```
 
 You can also open <http://127.0.0.1:8000/chat> in a browser to try the chat
 interface. It keeps conversation context, supports selecting a model, and sends
-requests to the same `/chat/groq` endpoint.
+requests to the same `/chat/gemini` endpoint.
 
 The response contains the assistant `message`, the model used, and token `usage`
-when provided by Groq.
+when provided by Gemini.
 
-The chat API includes a system rule: when the chatbot does not know an asked
-fact, it should respond with `search: [nội dung cần tìm kiếm]` so the system can
-look it up. Each request also includes the current date and time in the API
-server's timezone. When Groq returns a `search:` request, the chat API calls
-`/semantic-search` internally and sends up to five ranked text chunks and their
-sources back to Groq to generate the final answer.
+The chat API asks Gemini to return a JSON action to answer, clarify, or search.
+Each request also includes the current date and time in the API server's
+timezone. When Gemini returns a `search` action, the chat API calls
+`/semantic-search` internally and searches up to three web pages by default.
 
 The semantic-search endpoint runs the complete web retrieval flow. It accepts a
 query and optional search, chunking, and embedding settings:
@@ -236,14 +243,27 @@ query and optional search, chunking, and embedding settings:
 ```bash
 curl -X POST http://127.0.0.1:8000/semantic-search \
   -H "Content-Type: application/json" \
-  -d '{"query":"tiến độ sân bay Long Thành","max_results":5,"chunk_size":1000,"chunk_overlap":100}'
+  -d '{"query":"tiến độ sân bay Long Thành","max_results":3,"chunk_size":1000,"chunk_overlap":100}'
 ```
 
-The response includes the ranked chunks with source metadata and relevance
-scores, counts for searched pages and chunks, and any pages that could not be
-scraped. `step_timings` reports server-side elapsed seconds for search, scrape,
-chunking, embedding, and ranking. A failed page does not prevent other search
-results from being processed.
+The response includes ranked results with source metadata and relevance scores;
+chunks sharing a source are combined into one result. It also includes counts
+for searched pages and chunks, and any pages that could not be scraped.
+`step_timings` reports server-side elapsed seconds for search, scrape, chunking,
+embedding, and ranking. A failed page does not prevent other search results
+from being processed. The combined results are returned in the API response
+and are no longer saved to a file.
+
+To merge the ranked chunks saved by `test/console_embed_rerank.py` without
+running semantic search again, run:
+
+```bash
+python test/console_source_merge.py
+```
+
+By default, this reads `test/output/scraped_data_ranked.json`, merges records
+in memory, and prints the Markdown result to the console without writing an
+output file.
 
 To test the endpoint from a console client, start the API and run:
 

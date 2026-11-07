@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f3f0e9">
+    <title>Tìm kiếm thông tin · Gemini</title>
+    <link rel="stylesheet" href="/static/gemini_chat.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <div class="brand">
+          <div class="logo" aria-hidden="true">R</div>
+          <div>
+            <h1>Tìm kiếm thông tin</h1>
+            <p class="subtitle">Một góc nhỏ để hỏi những điều bạn đang tìm</p>
+          </div>
+        </div>
+        <button class="clear" id="clear" type="button">Làm mới cuộc trò chuyện ↗</button>
+      </header>
+
+      <div class="conversation-wrap">
+        <section class="conversation" id="conversation" aria-live="polite">
+          <div class="empty" id="empty">
+            <div>
+              <p class="eyebrow">Bắt đầu cuộc trò chuyện</p>
+              <strong>Mình cùng tìm câu trả lời nhé.</strong>
+              <p>Đặt câu hỏi về bất kỳ chủ đề nào bạn đang quan tâm. Cứ bắt đầu bằng điều bạn muốn biết.</p>
+              <div class="suggestions" aria-label="Câu hỏi gợi ý">
+                <button class="suggestion" type="button">Tóm tắt nội dung chính</button>
+                <button class="suggestion" type="button">Giải thích một khái niệm</button>
+                <button class="suggestion" type="button">Tìm điểm khác nhau</button>
+              </div>
+            </div>
+          </div>
+        </section>
+        <nav class="conversation-navigation" id="conversation-navigation" aria-label="Điều hướng cuộc trò chuyện" hidden>
+          <button id="scroll-to-top" type="button" aria-label="Lên đầu cuộc trò chuyện" title="Lên đầu cuộc trò chuyện" disabled>↑</button>
+          <button id="scroll-to-bottom" type="button" aria-label="Xuống cuối cuộc trò chuyện" title="Xuống cuối cuộc trò chuyện">↓</button>
+        </nav>
+      </div>
+
+      <form class="composer" id="chat-form">
+        <textarea id="prompt" rows="2" placeholder="Bạn đang muốn tìm hiểu điều gì?" aria-label="Tin nhắn" required></textarea>
+        <div class="controls">
+          <span class="hint">Enter để gửi · Shift+Enter xuống dòng</span>
+          <button class="send" id="send" type="submit">Gửi</button>
+        </div>
+      </form>
+      <footer>Phản hồi được tạo từ máy chủ ứng dụng. Hãy kiểm tra lại thông tin quan trọng.</footer>
+    </main>
+
+    <script src="/static/gemini_chat.js" defer></script>
+  </body>
+</html>

@@ -7,5 +7,5 @@ router = APIRouter()
 
 
 @router.get("/chat", include_in_schema=False)
-def groq_chat_page() -> FileResponse:
+def chat_page() -> FileResponse:
     return FileResponse(get_chat_page_path(), media_type="text/html")

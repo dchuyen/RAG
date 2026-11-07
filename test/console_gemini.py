@@ -7,7 +7,7 @@ import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.routers.groq import DEFAULT_MODEL
+from app.routers.gemini import DEFAULT_MODEL
 
 DEFAULT_API_URL = "http://127.0.0.1:8000"
 
@@ -29,7 +29,7 @@ def send_message(
 
     try:
         response = requests.post(
-            f"{api_url.rstrip('/')}/chat/groq",
+            f"{api_url.rstrip('/')}/chat/gemini",
             json=payload,
             timeout=(10, 120),
         )
@@ -49,7 +49,7 @@ def send_message(
         detail = result.get("detail", result) if isinstance(result, dict) else result
         raise RuntimeError(f"API trả về HTTP {response.status_code}: {detail}")
     if not isinstance(result, dict) or not isinstance(result.get("message"), str):
-        raise RuntimeError("Phản hồi API không đúng định dạng chat Groq.")
+        raise RuntimeError("Phản hồi API không đúng định dạng chat Gemini.")
     return result["message"]
 
 
@@ -60,7 +60,7 @@ def run_chat(
     max_tokens: int | None,
 ) -> int:
     messages: list[dict[str, str]] = []
-    print("Bắt đầu chat với Groq. Nhập /exit để thoát.")
+    print("Bắt đầu chat với Gemini. Nhập /exit để thoát.")
 
     while True:
         try:
@@ -92,13 +92,16 @@ def run_chat(
             continue
 
         messages.append({"role": "assistant", "content": assistant_message})
-        print(f"Groq: {assistant_message}")
+        print("\nToàn bộ nội dung chat:")
+        for message in messages:
+            speaker = "Bạn" if message["role"] == "user" else "Gemini"
+            print(f"{speaker}: {message['content']}")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Chat tương tác với Groq qua RAG API.")
+    parser = argparse.ArgumentParser(description="Chat tương tác với Gemini qua RAG API.")
     parser.add_argument("--api-url", default=DEFAULT_API_URL, help="Địa chỉ API FastAPI")
-    parser.add_argument("--model", default=DEFAULT_MODEL, help="Tên model Groq")
+    parser.add_argument("--model", default=DEFAULT_MODEL, help="Tên model Gemini")
     parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--max-tokens", type=int, help="Giới hạn token phản hồi")
     args = parser.parse_args()

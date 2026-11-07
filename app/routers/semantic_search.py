@@ -12,7 +12,7 @@ router = APIRouter(prefix="/semantic-search", tags=["semantic-search"])
 
 class SemanticSearchRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=500, description="Nội dung tìm kiếm.")
-    max_results: int = Field(default=1, ge=1, le=50)
+    max_results: int = Field(default=3, ge=1, le=50)
     region: str = Field(default="wt-wt")
     safesearch: Literal["off", "moderate", "strict"] = "moderate"
     chunk_size: int = Field(default=1000, gt=0)
