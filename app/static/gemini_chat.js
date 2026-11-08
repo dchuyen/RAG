@@ -6,7 +6,35 @@ const form = document.querySelector("#chat-form");
       const conversationNavigation = document.querySelector("#conversation-navigation");
       const scrollToTopButton = document.querySelector("#scroll-to-top");
       const scrollToBottomButton = document.querySelector("#scroll-to-bottom");
+      const themeToggle = document.querySelector("#theme-toggle");
       const history = [];
+
+      function applyTheme(theme) {
+        const isDark = theme === "dark";
+        document.body.classList.toggle("theme-dark", isDark);
+        document.documentElement.style.colorScheme = isDark ? "dark" : "light";
+        if (themeToggle) {
+          themeToggle.textContent = isDark ? "☀" : "☾";
+          themeToggle.setAttribute("aria-label", isDark ? "Chuyển sang giao diện sáng" : "Chuyển sang giao diện tối");
+          themeToggle.setAttribute("aria-pressed", String(isDark));
+        }
+        try {
+          localStorage.setItem("gemini-chat-theme", theme);
+        } catch {
+          // Ignore storage errors in restricted/private browsing contexts.
+        }
+      }
+
+      const initializeTheme = () => {
+        try {
+          const savedTheme = localStorage.getItem("gemini-chat-theme");
+          applyTheme(savedTheme === "dark" ? "dark" : "light");
+        } catch {
+          applyTheme("light");
+        }
+      };
+
+      initializeTheme();
 
       function appendInlineMarkdown(parent, text) {
         const pattern = /(`[^`\n]+`|\[([^\]\n]+)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)|\*\*([^*\n]+)\*\*|__([^_\n]+)__|~~([^~\n]+)~~|\*([^*\n]+)\*|_([^_\n]+)_)/g;
@@ -378,6 +406,16 @@ const form = document.querySelector("#chat-form");
           form.requestSubmit();
         }
       });
+
+      const toggleTheme = () => {
+        const nextTheme = document.body.classList.contains("theme-dark") ? "light" : "dark";
+        applyTheme(nextTheme);
+      };
+
+      if (themeToggle) {
+        themeToggle.addEventListener("click", toggleTheme);
+        themeToggle.onclick = toggleTheme;
+      }
 
       document.querySelector("#clear").addEventListener("click", () => {
         history.length = 0;

@@ -3,9 +3,9 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#f3f0e9">
+    <meta name="theme-color" content="#f3f7ff">
     <title>Tìm kiếm thông tin · Gemini</title>
-    <link rel="stylesheet" href="/static/gemini_chat.css">
+    <link rel="stylesheet" href="/static/gemini_chat.css?v=2">
   </head>
   <body>
     <main class="shell">
@@ -17,7 +17,10 @@
             <p class="subtitle">Một góc nhỏ để hỏi những điều bạn đang tìm</p>
           </div>
         </div>
-        <button class="clear" id="clear" type="button">Làm mới cuộc trò chuyện ↗</button>
+        <div class="header-actions">
+          <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Chuyển sang giao diện tối" aria-pressed="false" title="Chuyển giao diện tối/sáng">☾</button>
+          <button class="clear" id="clear" type="button">Làm mới cuộc trò chuyện ↗</button>
+        </div>
       </header>
 
       <div class="conversation-wrap">
@@ -51,6 +54,6 @@
       <footer>Phản hồi được tạo từ máy chủ ứng dụng. Hãy kiểm tra lại thông tin quan trọng.</footer>
     </main>
 
-    <script src="/static/gemini_chat.js" defer></script>
+    <script src="/static/gemini_chat.js?v=2" defer></script>
   </body>
 </html>

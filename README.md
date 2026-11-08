@@ -28,13 +28,7 @@ Gemini requests in one chat turn.
 
 ## Test search from the console
 
-Start the API in one terminal:
-
-```bash
-uvicorn app.main:app --reload
-```
-
-Then start the interactive console client in another terminal:
+Run the interactive console, which calls the search service directly:
 
 ```bash
 python test/console_search.py
@@ -43,7 +37,7 @@ python test/console_search.py
 Enter a search query; leave it blank to exit. Optional settings:
 
 ```bash
-python test/console_search.py --api-url http://127.0.0.1:8000 --max-results 5 --region us-en --safesearch strict
+python test/console_search.py --max-results 5 --region us-en --safesearch strict
 ```
 
 Found URLs are appended to `search_results.txt` in the current directory by
@@ -55,8 +49,8 @@ python test/console_search.py --output test/results/search.txt
 
 ## Test scraping from the console
 
-Start the API, then run the scraper to process every URL from
-`search_results.txt`:
+Run the scraper to process every URL from `search_results.txt` using the
+scrape service directly:
 
 ```bash
 python test/console_scrape.py
@@ -84,47 +78,35 @@ python test/console_scrape.py --output test/results/python.txt https://www.pytho
 The scraper continues after individual URL failures and returns a non-zero exit
 code if any URL fails.
 
-To use an API running at a different address:
-
-```bash
-python test/console_scrape.py --api-url http://127.0.0.1:8000 https://www.python.org/about/
-```
-
 ## Test embedding from the console
 
-Start the API in one terminal:
+Call the embedding and ranking services directly:
 
 ```bash
-uvicorn app.main:app --reload
-```
-
-Then test the embedding endpoint:
-
-```bash
-python test/console_embed.py
+python test/console_embed_rerank.py
 ```
 
 ## Chat with Gemini from the console
 
-Configure `GEMINI_API_KEY` in `.env`, start the API, then run:
+Configure `GEMINI_API_KEY` in `.env`, then run:
 
 ```bash
 python test/console_gemini.py
 ```
 
-Enter messages at the prompt. The client keeps the conversation context for
-follow-up messages; enter `/exit` to end the chat. You can override the API
-address, model, temperature, or token limit:
+The script calls the Gemini service directly. Enter messages at the prompt;
+the conversation context is kept for follow-up messages. Enter `/exit` to end
+the chat. You can override the model, temperature, or token limit:
 
 ```bash
-python test/console_gemini.py --api-url http://127.0.0.1:8000 \
-  --model gemini-2.5-flash --temperature 0.7 --max-tokens 500
+python test/console_gemini.py --model gemini-2.5-flash \
+  --temperature 0.7 --max-tokens 500
 ```
 
 Or test with a custom Vietnamese sentence:
 
 ```bash
-python test/console_embed.py "Trí tuệ nhân tạo đang phát triển rất nhanh tại Việt Nam"
+python test/console_embed_rerank.py "Trí tuệ nhân tạo đang phát triển rất nhanh tại Việt Nam"
 ```
 
 To search the text chunks in `scraped_data_processed.json`, run the same
@@ -134,13 +116,13 @@ saves the ranked records with a `relevance_score` field to
 `scraped_data_ranked.json`:
 
 ```bash
-python test/console_embed.py
+python test/console_embed_rerank.py
 ```
 
 You can provide the query and customize the input/output files:
 
 ```bash
-python test/console_embed.py "tiến độ sân bay Long Thành" \
+python test/console_embed_rerank.py "tiến độ sân bay Long Thành" \
   --input scraped_data_processed.json \
   --output search_results_ranked.json
 ```
@@ -262,16 +244,16 @@ python test/console_source_merge.py
 ```
 
 By default, this reads `test/output/scraped_data_ranked.json`, merges records
-in memory, and prints the Markdown result to the console without writing an
-output file.
+by source, writes the Markdown result to `test/output/scraped_data_merged.md`,
+and prints it to the console.
 
-To test the endpoint from a console client, start the API and run:
+To run semantic search through the service directly:
 
 ```bash
 python test/console_semantic_search.py
 ```
 
-Enter a query when prompted, or pass it directly with optional API settings:
+Enter a query when prompted, or pass it directly with optional search settings:
 
 ```bash
 python test/console_semantic_search.py "tiến độ sân bay Long Thành" \
@@ -279,9 +261,9 @@ python test/console_semantic_search.py "tiến độ sân bay Long Thành" \
   --output semantic_search_response.json
 ```
 
-The client prints processing counts, timing, and scrape failures without
-printing ranked results or matched text. It can save the full API response,
-including ranked results and text, to a JSON file with `--output`.
+The script prints processing counts, timing, and scrape failures without
+printing ranked results or matched text. It can save the full result, including
+ranked results and text, to a JSON file with `--output`.
 
 The ranking endpoint accepts a query and documents in the same `text` and
 `metadata` shape produced by `test/chunking.py`:

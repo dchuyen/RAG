@@ -1,27 +1,77 @@
 :root {
         color-scheme: light;
         font-family: "Segoe UI", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-        background: #f3f0e9;
+        background: #f3f7ff;
         color: #252923;
         font-synthesis: none;
         --ink: #252923;
-        --muted: #77796f;
-        --line: #dedbd2;
-        --paper: #fbfaf6;
-        --accent: #c65e3b;
+        --muted: #5f6f85;
+        --line: #d9e3f5;
+        --paper: #ffffff;
+        --accent: #2563eb;
       }
 
-      * { box-sizing: border-box; }
+body.theme-dark {
+  color-scheme: dark;
+  --ink: #e5eefc;
+  --muted: #a9b9d2;
+  --line: #2f3e5c;
+  --paper: #111827;
+  --accent: #60a5fa;
+}
 
-      body {
-        height: 100vh;
-        height: 100dvh;
-        margin: 0;
-        overflow: hidden;
-        background-color: #f3f0e9;
-        background-image: radial-gradient(#d7d2c8 0.65px, transparent 0.65px);
-        background-size: 15px 15px;
-      }
+* { box-sizing: border-box; }
+
+body {
+  height: 100vh;
+  height: 100dvh;
+  margin: 0;
+  overflow: hidden;
+  background-color: #f3f7ff;
+  background-image: radial-gradient(#dfe9ff 0.65px, transparent 0.65px);
+  background-size: 15px 15px;
+}
+
+body.theme-dark {
+  background-color: #0b1220;
+  background-image: radial-gradient(#1d2d4f 0.65px, transparent 0.65px);
+}
+
+body.theme-dark .bubble,
+body.theme-dark .composer,
+body.theme-dark .conversation-navigation button,
+body.theme-dark .theme-toggle {
+  background: #111827;
+  color: var(--ink);
+}
+
+body.theme-dark .bubble {
+  border-color: var(--line);
+}
+body.theme-dark .bubble code { background: #1e293b; }
+body.theme-dark .bubble pre {
+  border-color: var(--line);
+  background: #0f172a;
+}
+body.theme-dark .bubble th { background: #162033; }
+body.theme-dark .bubble th, body.theme-dark .bubble td { border-color: var(--line); }
+body.theme-dark .bubble a { color: #93c5fd; }
+body.theme-dark .suggestion {
+  border-color: var(--line);
+  background: rgba(15, 23, 42, .72);
+  color: var(--ink);
+}
+body.theme-dark .suggestion:hover { border-color: var(--accent); color: var(--accent); }
+body.theme-dark .message.user .bubble {
+  border-color: #3b82f6;
+  background: #0f1f3d;
+}
+body.theme-dark .message.user .bubble code { background: #172554; }
+body.theme-dark .message.user .bubble pre { background: #0b1730; }
+body.theme-dark .message.error .bubble { border-color: #60a5fa; color: #dbeafe; }
+body.theme-dark textarea::placeholder { color: #8aa0c7; }
+body.theme-dark select { color: var(--ink); }
+body.theme-dark footer { color: #9fb3d9; }
 
       .shell {
         width: min(1000px, 100%);
@@ -68,6 +118,28 @@
         cursor: pointer;
       }
 
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .theme-toggle {
+        width: 34px;
+        height: 34px;
+        padding: 0;
+        border: 1px solid var(--line);
+        border-radius: 50%;
+        background: var(--paper);
+        color: var(--ink);
+        font-size: 15px;
+        line-height: 1;
+        display: grid;
+        place-items: center;
+        transition: border-color .15s, background .15s, color .15s, transform .15s;
+      }
+      .theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
+      .theme-toggle:active { transform: scale(.97); }
+      .theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
       .clear {
         padding: 8px 0 8px 12px;
         background: transparent;
@@ -111,11 +183,11 @@
         height: 36px;
         display: grid;
         place-items: center;
-        border: 1px solid #d5d1c7;
+        border: 1px solid var(--line);
         border-radius: 50%;
         background: var(--paper);
         color: var(--ink);
-        box-shadow: 0 3px 12px #3733281c;
+        box-shadow: 0 3px 12px rgba(15, 23, 42, 0.12);
         font-size: 19px;
         line-height: 1;
         transition: border-color .15s, color .15s, opacity .15s;
@@ -212,13 +284,13 @@
       }
       .bubble blockquote {
         padding-left: 12px;
-        border-left: 2px solid #d6a28e;
+        border-left: 2px solid #bfd3ff;
         color: var(--muted);
       }
       .bubble code {
         padding: 2px 5px;
         border-radius: 3px;
-        background: #eeece5;
+        background: #edf4ff;
         font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
         font-size: .9em;
       }
@@ -227,9 +299,9 @@
         margin: 0 0 12px;
         padding: 12px;
         overflow-x: auto;
-        border: 1px solid #e8e5de;
+        border: 1px solid #dfeaff;
         border-radius: 3px;
-        background: #f1efe9;
+        background: #f3f8ff;
         line-height: 1.5;
       }
       .bubble pre code { padding: 0; background: transparent; font-size: .85em; }
@@ -249,30 +321,30 @@
       .bubble th, .bubble td {
         min-width: 92px;
         padding: 8px 11px;
-        border-bottom: 1px solid #e8e5de;
+        border-bottom: 1px solid #dfeaff;
       }
-      .bubble th { background: #f1efe9; font-weight: 650; }
+      .bubble th { background: #eef5ff; font-weight: 650; }
       .bubble tr:last-child td { border-bottom: 0; }
-      .bubble a { color: #a74429; text-decoration-thickness: 1px; text-underline-offset: 2px; }
+      .bubble a { color: #1d4ed8; text-decoration-thickness: 1px; text-underline-offset: 2px; }
       .bubble hr { margin: 14px 0; border: 0; border-top: 1px solid var(--line); }
       .message.user .bubble {
-        border-color: #e6c6b8;
+        border-color: #bfd3ff;
         border-radius: 10px 2px 10px 10px;
-        background: #f3e5dd;
+        background: #ebf2ff;
       }
-      .message.user .bubble code { background: #ead9d0; }
-      .message.user .bubble pre { background: #efe1d9; }
-      .message.error .bubble { border-color: #d99a86; color: #913f2d; }
+      .message.user .bubble code { background: #dfeaff; }
+      .message.user .bubble pre { background: #eaf1ff; }
+      .message.error .bubble { border-color: #9bb9ff; color: #1d4ed8; }
 
       .composer {
         width: min(710px, 100%);
         flex: 0 0 auto;
         margin: 0 auto;
         padding: 15px 17px 12px;
-        border: 1px solid #d5d1c7;
+        border: 1px solid var(--line);
         border-radius: 4px;
         background: var(--paper);
-        box-shadow: 0 8px 26px #37332812;
+        box-shadow: 0 8px 26px rgba(15, 23, 42, 0.08);
       }
       .composer textarea {
         width: 100%;
@@ -299,7 +371,7 @@
         padding: 5px 22px 5px 0;
         border: 0;
         background: transparent;
-        color: #4a4b43;
+        color: var(--ink);
         font-size: 11px;
       }
       .hint { margin-left: auto; color: #9a998f; font-size: 10px; }
@@ -307,13 +379,13 @@
         min-width: 73px;
         padding: 9px 14px;
         border-radius: 3px;
-        background: var(--ink);
+        background: var(--accent);
         color: var(--paper);
         font-size: 12px;
         font-weight: 600;
         transition: background .15s;
       }
-      .send:hover { background: var(--accent); }
+      .send:hover { background: #1d4ed8; }
       .send:disabled { cursor: wait; opacity: .6; }
       footer {
         width: min(710px, 100%);

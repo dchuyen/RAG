@@ -1,51 +1,27 @@
 import argparse
-import json
+import sys
 from pathlib import Path
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
-from urllib.request import urlopen
+
+from fastapi import HTTPException
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from app.services.search import search_web
 
 
 DEFAULT_OUTPUT = Path(__file__).resolve().parent / "output" / "search_results.txt"
 
 
-def search_api(
-    api_url: str,
+def search(
     query: str,
     max_results: int,
     region: str,
     safesearch: str,
 ) -> list[str]:
-    params = urlencode(
-        {
-            "q": query,
-            "max_results": max_results,
-            "region": region,
-            "safesearch": safesearch,
-        }
-    )
-    url = f"{api_url.rstrip('/')}/search?{params}"
-
     try:
-        with urlopen(url, timeout=30) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except HTTPError as exc:
-        error_body = exc.read().decode("utf-8", errors="replace")
-        try:
-            detail = json.loads(error_body).get("detail", error_body)
-        except json.JSONDecodeError:
-            detail = error_body
-        raise RuntimeError(f"API trả về HTTP {exc.code}: {detail}") from exc
-    except URLError as exc:
-        raise RuntimeError(f"Không thể kết nối tới API tại {api_url}: {exc.reason}") from exc
-    except json.JSONDecodeError as exc:
-        raise RuntimeError("API trả về dữ liệu JSON không hợp lệ.") from exc
-
-    if not isinstance(payload, list) or not all(
-        isinstance(link, str) for link in payload
-    ):
-        raise RuntimeError("Danh sách kết quả API có định dạng không hợp lệ.")
-    return payload
+        return search_web(query, max_results, region, safesearch)
+    except HTTPException as exc:
+        raise RuntimeError(f"Search service trả về HTTP {exc.status_code}: {exc.detail}") from exc
 
 
 def save_results(output_file: Path, results: list[str]) -> None:
@@ -56,12 +32,7 @@ def save_results(output_file: Path, results: list[str]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Console client để kiểm tra API tìm kiếm web."
-    )
-    parser.add_argument(
-        "--api-url",
-        default="http://127.0.0.1:8000",
-        help="Địa chỉ gốc của FastAPI (mặc định: http://127.0.0.1:8000)",
+        description="Console để kiểm tra service tìm kiếm web."
     )
     parser.add_argument(
         "--max-results",
@@ -97,8 +68,7 @@ def main() -> None:
             break
 
         try:
-            results = search_api(
-                args.api_url,
+            results = search(
                 query,
                 args.max_results,
                 args.region,

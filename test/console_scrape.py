@@ -1,45 +1,26 @@
 import argparse
 import json
+import sys
 from pathlib import Path
-from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
-from urllib.request import urlopen
 
+from fastapi import HTTPException
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from app.services.scrape import scrape_webpage
 
 DEFAULT_INPUT = Path(__file__).resolve().parent / "output" / "search_results.txt"
 DEFAULT_OUTPUT = Path(__file__).resolve().parent / "output" / "scraped_data.txt"
 
 
-def scrape_api(api_url: str, webpage_url: str) -> dict[str, Any]:
-    params = urlencode({"url": webpage_url})
-    endpoint = f"{api_url.rstrip('/')}/scrape?{params}"
-
+def scrape_url(webpage_url: str) -> dict[str, object]:
     try:
-        with urlopen(endpoint, timeout=60) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except HTTPError as exc:
-        error_body = exc.read().decode("utf-8", errors="replace")
-        try:
-            error_payload = json.loads(error_body)
-        except json.JSONDecodeError:
-            detail = error_body
-        else:
-            detail = error_payload.get("detail", error_body) if isinstance(error_payload, dict) else error_body
-        raise RuntimeError(f"API trả về HTTP {exc.code}: {detail}") from exc
-    except URLError as exc:
-        raise RuntimeError(
-            f"Không thể kết nối tới API tại {api_url}: {exc.reason}"
-        ) from exc
-    except json.JSONDecodeError as exc:
-        raise RuntimeError("API trả về dữ liệu JSON không hợp lệ.") from exc
-
-    if not isinstance(payload, dict):
-        raise RuntimeError("Phản hồi API không có định dạng JSON object.")
-    return payload
+        return scrape_webpage(webpage_url)
+    except HTTPException as exc:
+        raise RuntimeError(f"Scrape service trả về HTTP {exc.status_code}: {exc.detail}") from exc
 
 
-def save_result(output_file: Path, result: dict[str, Any]) -> None:
+def save_result(output_file: Path, result: dict[str, object]) -> None:
     output_file.parent.mkdir(parents=True, exist_ok=True)
     with output_file.open("a", encoding="utf-8") as file:
         if file.tell() > 0:
@@ -48,12 +29,11 @@ def save_result(output_file: Path, result: dict[str, Any]) -> None:
 
 
 def scrape_and_print(
-    api_url: str,
     webpage_url: str,
     output_file: Path,
 ) -> bool:
     try:
-        result = scrape_api(api_url, webpage_url)
+        result = scrape_url(webpage_url)
     except RuntimeError as exc:
         print(f"Lỗi: {exc}")
         return False
@@ -68,7 +48,7 @@ def scrape_and_print(
     return True
 
 
-def scrape_file(api_url: str, input_file: Path, output_file: Path) -> int:
+def scrape_file(input_file: Path, output_file: Path) -> int:
     try:
         urls = [
             line.strip()
@@ -89,7 +69,7 @@ def scrape_file(api_url: str, input_file: Path, output_file: Path) -> int:
     failed = 0
     for index, webpage_url in enumerate(urls, start=1):
         print(f"\n[{index}/{len(urls)}] Đang cào: {webpage_url}")
-        if not scrape_and_print(api_url, webpage_url, output_file):
+        if not scrape_and_print(webpage_url, output_file):
             failed += 1
 
     succeeded = len(urls) - failed
@@ -99,7 +79,7 @@ def scrape_file(api_url: str, input_file: Path, output_file: Path) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Console client để kiểm tra API cào dữ liệu web."
+        description="Console để kiểm tra service cào dữ liệu web."
     )
     parser.add_argument(
         "url",
@@ -113,11 +93,6 @@ def main() -> int:
         help=f"File chứa danh sách URL, mỗi URL trên một dòng (mặc định: {DEFAULT_INPUT})",
     )
     parser.add_argument(
-        "--api-url",
-        default="http://127.0.0.1:8000",
-        help="Địa chỉ gốc của FastAPI (mặc định: http://127.0.0.1:8000)",
-    )
-    parser.add_argument(
         "--output",
         type=Path,
         default=DEFAULT_OUTPUT,
@@ -129,13 +104,12 @@ def main() -> int:
         parser.error("Không thể dùng đồng thời URL trực tiếp và --input.")
 
     if args.input:
-        return scrape_file(args.api_url, args.input, args.output)
+        return scrape_file(args.input, args.output)
 
     if args.url:
-        return 0 if scrape_and_print(args.api_url, args.url, args.output) else 1
+        return 0 if scrape_and_print(args.url, args.output) else 1
 
     return scrape_file(
-        args.api_url,
         args.input or DEFAULT_INPUT,
         args.output,
     )
