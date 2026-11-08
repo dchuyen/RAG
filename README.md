@@ -1,6 +1,13 @@
 # RAG API
 
-A starter API built with FastAPI.
+A FastAPI starter project for a RAG workflow. The repository currently contains the
+service layer and early app wiring, but it is still in a partial/transition state:
+router modules are not yet fully populated to match every feature described below,
+so the project should be treated as a work-in-progress rather than a fully finished
+API.
+
+Note: this snapshot is intentionally a service-first scaffold. The app may not run
+end-to-end until the missing router modules are added and registered in `app/main.py`.
 
 ## Run locally
 
@@ -291,14 +298,27 @@ and limits downloaded pages to 5 MB.
 Install the added dependencies with `pip install -r requirements.txt` before
 starting the API.
 
-## API structure
+## Current project structure
 
-- `app/routers/root.py` — `GET /`
-- `app/routers/health.py` — `GET /health`
-- `app/routers/search.py` — `GET /search`
-- `app/routers/ranking.py` — `POST /ranking`
-- `app/routers/semantic_search.py` — `POST /semantic-search`
-- `app/routers/scrape.py` — `GET /scrape`
-- `app/routers/embeddings.py` — `POST /embeddings`, `GET /embeddings/single`
-- `app/routers/chunks.py` — `POST /chunks/split`
-- `app/main.py` — creates the FastAPI app and registers the routers
+This checkout is a service-oriented scaffold rather than a fully wired router package.
+The main implementation modules currently live under `app/services`, while the
+`app/routers` package only contains the initial routes for the chat page and health
+check:
+
+- `app/main.py` — app bootstrap and lifecycle setup
+- `app/routers/chat_ui.py` — `/chat` page route
+- `app/routers/health.py` — `/health` route
+- `app/services/search.py` — DuckDuckGo web search logic
+- `app/services/scrape.py` — webpage extraction with Trafilatura
+- `app/services/embeddings.py` — dense embedding logic
+- `app/services/ranking.py` — cosine-relevance ranking logic
+- `app/services/semantic_search.py` — end-to-end search/scrape/chunk/rank flow
+- `app/services/chunks.py` — paragraph-aware chunking logic
+- `app/services/gemini.py` — Gemini chat integration and system prompt rules
+- `app/services/source_merge.py` — merge ranked chunks by source
+- `app/static/` — frontend assets for the chat UI
+- `test/` — console scripts and validation helpers
+
+The README below documents the intended API flow for the project. Some route files
+listed in older docs were not yet created in this snapshot, so the app should be
+considered a work in progress until those router modules are added and registered.
