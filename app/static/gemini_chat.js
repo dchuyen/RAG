@@ -7,7 +7,148 @@ const form = document.querySelector("#chat-form");
       const scrollToTopButton = document.querySelector("#scroll-to-top");
       const scrollToBottomButton = document.querySelector("#scroll-to-bottom");
       const themeToggle = document.querySelector("#theme-toggle");
+      const savedConversationsList = document.querySelector("#saved-conversations");
+      const deleteConversationButton = document.querySelector("#delete-conversation");
+      const storageStatus = document.querySelector("#storage-status");
+      const sidebarToggle = document.querySelector("#sidebar-toggle");
+      const sidebarBackdrop = document.querySelector("#sidebar-backdrop");
+      const shell = document.querySelector(".shell");
       const history = [];
+      const conversationStorageKey = "gemini-chat-conversations";
+      let savedConversations = [];
+      let currentConversationId = null;
+
+      function setStorageStatus(message, isError = false) {
+        storageStatus.textContent = message;
+        storageStatus.classList.toggle("error", isError);
+      }
+
+      function loadSavedConversations() {
+        try {
+          const stored = localStorage.getItem(conversationStorageKey);
+          if (!stored) {
+            refreshSavedConversations();
+            return;
+          }
+
+          const parsed = JSON.parse(stored);
+          if (!Array.isArray(parsed)) {
+            throw new Error("Dữ liệu cuộc trò chuyện không đúng định dạng.");
+          }
+          savedConversations = parsed.filter((item) => (
+            item
+            && typeof item.id === "string"
+            && typeof item.title === "string"
+            && typeof item.createdAt === "string"
+            && typeof item.updatedAt === "string"
+            && Array.isArray(item.messages)
+            && item.messages.every((message) => (
+              message
+              && ["user", "assistant"].includes(message.role)
+              && typeof message.content === "string"
+              && (message.systemData === undefined || typeof message.systemData === "string")
+              && (message.searchQuery === undefined || typeof message.searchQuery === "string")
+              && (message.searchAction === undefined || typeof message.searchAction === "string")
+            ))
+          ));
+          if (savedConversations.length !== parsed.length) {
+            setStorageStatus("Một số hội thoại lưu trên trình duyệt không hợp lệ.", true);
+          }
+          refreshSavedConversations();
+        } catch (error) {
+          setStorageStatus(`Không thể đọc hội thoại đã lưu: ${error.message}`, true);
+        }
+      }
+
+      function refreshSavedConversations() {
+        savedConversationsList.replaceChildren();
+        if (!savedConversations.length) {
+          const emptyItem = document.createElement("p");
+          emptyItem.className = "history-empty";
+          emptyItem.textContent = "Các cuộc trò chuyện của bạn sẽ xuất hiện ở đây.";
+          savedConversationsList.append(emptyItem);
+        }
+
+        [...savedConversations]
+          .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+          .forEach((item) => {
+            const listItem = document.createElement("div");
+            listItem.className = "conversation-row";
+            listItem.setAttribute("role", "listitem");
+            const button = document.createElement("button");
+            button.className = "conversation-item";
+            button.type = "button";
+            button.dataset.conversationId = item.id;
+            button.disabled = sendButton.disabled;
+            if (item.id === currentConversationId) button.setAttribute("aria-current", "true");
+
+            const title = document.createElement("span");
+            title.className = "conversation-title";
+            title.textContent = item.title;
+            const updatedAt = document.createElement("span");
+            updatedAt.className = "conversation-date";
+            updatedAt.textContent = new Date(item.updatedAt).toLocaleString("vi-VN", {
+              dateStyle: "short",
+              timeStyle: "short",
+            });
+            const deleteButton = document.createElement("button");
+            deleteButton.className = "conversation-delete";
+            deleteButton.type = "button";
+            deleteButton.dataset.deleteConversationId = item.id;
+            deleteButton.disabled = sendButton.disabled;
+            deleteButton.title = "Xóa cuộc trò chuyện";
+            deleteButton.setAttribute("aria-label", `Xóa cuộc trò chuyện “${item.title}”`);
+            deleteButton.textContent = "×";
+            button.append(title, updatedAt);
+            listItem.append(button, deleteButton);
+            savedConversationsList.append(listItem);
+          });
+        deleteConversationButton.disabled = !currentConversationId || sendButton.disabled;
+      }
+
+      function persistCurrentConversation() {
+        if (!history.length || !currentConversationId) return;
+
+        const now = new Date().toISOString();
+        const existing = savedConversations.find((item) => item.id === currentConversationId);
+        const firstUserMessage = history.find((message) => message.role === "user");
+        const title = existing?.title
+          || firstUserMessage?.content?.replace(/\s+/g, " ").slice(0, 60)
+          || "Cuộc trò chuyện mới";
+        const conversationData = {
+          id: currentConversationId,
+          title,
+          createdAt: existing?.createdAt || now,
+          updatedAt: now,
+          messages: history.map(({ role, content, systemData, searchQuery, searchAction }) => ({
+            role,
+            content,
+            ...(typeof systemData === "string" ? { systemData } : {}),
+            ...(typeof searchQuery === "string" ? { searchQuery } : {}),
+            ...(typeof searchAction === "string" ? { searchAction } : {}),
+          })),
+        };
+        const index = savedConversations.findIndex((item) => item.id === currentConversationId);
+        if (index === -1) savedConversations.push(conversationData);
+        else savedConversations[index] = conversationData;
+
+        try {
+          localStorage.setItem(conversationStorageKey, JSON.stringify(savedConversations));
+          refreshSavedConversations();
+          setStorageStatus("Đã lưu trên trình duyệt này.");
+        } catch (error) {
+          setStorageStatus(`Không thể lưu hội thoại: ${error.message}`, true);
+        }
+      }
+
+      function createConversationId() {
+        if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+          return crypto.randomUUID();
+        }
+        return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      }
+
+      loadSavedConversations();
 
       function applyTheme(theme) {
         const isDark = theme === "dark";
@@ -283,7 +424,57 @@ const form = document.querySelector("#chat-form");
         }
       }
 
-      function addMessage(role, content, isError = false) {
+      function addSystemData(bubble, systemData, searchQuery, searchAction) {
+        const hasSearchQuery = typeof searchQuery === "string" && searchQuery.trim();
+        const hasSearchAction = typeof searchAction === "string" && searchAction.trim();
+        const hasSystemData = typeof systemData === "string" && systemData.trim();
+        if (!hasSearchQuery && !hasSearchAction && !hasSystemData) return;
+
+        const details = document.createElement("details");
+        details.className = "system-data";
+        const summary = document.createElement("summary");
+        summary.textContent = "Truy vấn và dữ liệu tìm kiếm";
+        details.append(summary);
+        if (hasSearchAction) {
+          const actionLabel = document.createElement("p");
+          actionLabel.className = "system-search-query-label";
+          actionLabel.textContent = "JSON do AI tạo";
+          const actionCode = document.createElement("pre");
+          actionCode.className = "system-search-action";
+          const actionContent = document.createElement("code");
+          actionContent.textContent = searchAction;
+          actionCode.append(actionContent);
+          details.append(actionLabel, actionCode);
+        }
+        if (hasSearchQuery) {
+          const queryLabel = document.createElement("p");
+          queryLabel.className = "system-search-query-label";
+          queryLabel.textContent = "Truy vấn AI gửi đi";
+          const query = document.createElement("p");
+          query.className = "system-search-query";
+          query.textContent = searchQuery;
+          details.append(queryLabel, query);
+        }
+        const content = document.createElement("div");
+        content.className = "system-data-content";
+        if (hasSystemData) {
+          const dataLabel = document.createElement("p");
+          dataLabel.className = "system-data-label";
+          dataLabel.textContent = "Dữ liệu hệ thống cung cấp";
+          renderMarkdown(content, systemData);
+          details.append(dataLabel, content);
+        }
+        bubble.append(details);
+      }
+
+      function addMessage(
+        role,
+        content,
+        isError = false,
+        systemData = null,
+        searchQuery = null,
+        searchAction = null,
+      ) {
         emptyState.hidden = true;
         const row = document.createElement("article");
         row.className = `message ${role}${isError ? " error" : ""}`;
@@ -295,12 +486,52 @@ const form = document.querySelector("#chat-form");
         const bubble = document.createElement("div");
         bubble.className = "bubble";
         if (isError) bubble.textContent = content;
-        else renderMarkdown(bubble, content);
+        else {
+          renderMarkdown(bubble, content);
+          if (role === "assistant") {
+            addSystemData(bubble, systemData, searchQuery, searchAction);
+          }
+        }
         row.append(label, bubble);
         conversation.append(row);
         updateConversationNavigation();
         scrollConversationToBottom();
         return row;
+      }
+
+      function renderConversation(messages) {
+        history.splice(0, history.length, ...messages);
+        conversation.querySelectorAll(".message").forEach((message) => message.remove());
+        emptyState.hidden = messages.length > 0;
+        messages.forEach(({ role, content, systemData, searchQuery, searchAction }) => (
+          addMessage(role, content, false, systemData, searchQuery, searchAction)
+        ));
+        conversation.scrollTo({ top: conversation.scrollHeight, behavior: "auto" });
+        updateConversationNavigation();
+      }
+
+      function startNewConversation() {
+        if (sendButton.disabled) return;
+        currentConversationId = null;
+        renderConversation([]);
+        refreshSavedConversations();
+        setStorageStatus("");
+        promptInput.focus();
+        closeSidebar();
+      }
+
+      function closeSidebar() {
+        shell.classList.remove("sidebar-open");
+        sidebarToggle.setAttribute("aria-expanded", "false");
+        sidebarToggle.setAttribute("aria-label", "Mở lịch sử chat");
+        sidebarBackdrop.hidden = true;
+      }
+
+      function toggleSidebar() {
+        const isOpen = shell.classList.toggle("sidebar-open");
+        sidebarToggle.setAttribute("aria-expanded", String(isOpen));
+        sidebarToggle.setAttribute("aria-label", isOpen ? "Đóng lịch sử chat" : "Mở lịch sử chat");
+        sidebarBackdrop.hidden = !isOpen;
       }
 
       function updateConversationNavigation() {
@@ -342,11 +573,14 @@ const form = document.querySelector("#chat-form");
         const content = promptInput.value.trim();
         if (!content || sendButton.disabled) return;
 
+        if (!currentConversationId) currentConversationId = createConversationId();
         history.push({ role: "user", content });
         addMessage("user", content);
         promptInput.value = "";
         sendButton.disabled = true;
         sendButton.textContent = "...";
+        refreshSavedConversations();
+        document.querySelector("#clear").disabled = true;
         const pending = addMessage("assistant", "Đang chờ Gemini trả lời...");
         const timer = document.createElement("span");
         timer.className = "response-timer";
@@ -368,7 +602,7 @@ const form = document.querySelector("#chat-form");
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              messages: history,
+              messages: history.map(({ role, content }) => ({ role, content })),
               temperature: 0.7,
             }),
           });
@@ -380,10 +614,21 @@ const form = document.querySelector("#chat-form");
           if (typeof result.message !== "string") {
             throw new Error("Phản hồi API không đúng định dạng chat.");
           }
-          history.push({ role: "assistant", content: result.message });
+          const systemData = typeof result.system_data === "string" ? result.system_data : null;
+          const searchQuery = typeof result.search_query === "string" ? result.search_query : null;
+          const searchAction = typeof result.search_action === "string" ? result.search_action : null;
+          history.push({
+            role: "assistant",
+            content: result.message,
+            systemData,
+            searchQuery,
+            searchAction,
+          });
+          persistCurrentConversation();
           const bubble = pending.querySelector(".bubble");
           bubble.replaceChildren();
           renderMarkdown(bubble, result.message);
+          addSystemData(bubble, systemData, searchQuery, searchAction);
           updateConversationNavigation();
           scrollConversationToBottom();
         } catch (error) {
@@ -396,6 +641,8 @@ const form = document.querySelector("#chat-form");
           updateTimer();
           sendButton.disabled = false;
           sendButton.textContent = "Gửi";
+          document.querySelector("#clear").disabled = false;
+          refreshSavedConversations();
           promptInput.focus();
         }
       });
@@ -414,14 +661,59 @@ const form = document.querySelector("#chat-form");
 
       if (themeToggle) {
         themeToggle.addEventListener("click", toggleTheme);
-        themeToggle.onclick = toggleTheme;
       }
 
-      document.querySelector("#clear").addEventListener("click", () => {
-        history.length = 0;
-        conversation.querySelectorAll(".message").forEach((message) => message.remove());
-        emptyState.hidden = false;
-        conversation.scrollTo({ top: 0, behavior: "auto" });
-        updateConversationNavigation();
-        promptInput.focus();
+      document.querySelector("#clear").addEventListener("click", startNewConversation);
+
+      function deleteSavedConversation(conversationId) {
+        const selected = savedConversations.find((item) => item.id === conversationId);
+        if (!selected || sendButton.disabled) return;
+        if (!window.confirm(`Xóa cuộc trò chuyện "${selected.title}"?`)) return;
+
+        const remaining = savedConversations.filter((item) => item.id !== conversationId);
+        try {
+          localStorage.setItem(conversationStorageKey, JSON.stringify(remaining));
+          savedConversations = remaining;
+          if (conversationId === currentConversationId) {
+            currentConversationId = null;
+            renderConversation([]);
+            promptInput.focus();
+            closeSidebar();
+          }
+          refreshSavedConversations();
+          setStorageStatus("Đã xóa cuộc trò chuyện.");
+        } catch (error) {
+          setStorageStatus(`Không thể xóa hội thoại: ${error.message}`, true);
+        }
+      }
+
+      savedConversationsList.addEventListener("click", (event) => {
+        const deleteButton = event.target.closest("[data-delete-conversation-id]");
+        if (deleteButton) {
+          deleteSavedConversation(deleteButton.dataset.deleteConversationId);
+          return;
+        }
+
+        const button = event.target.closest("[data-conversation-id]");
+        if (!button || sendButton.disabled) return;
+        const selected = savedConversations.find((item) => item.id === button.dataset.conversationId);
+        if (!selected) {
+          return;
+        }
+        currentConversationId = selected.id;
+        renderConversation(selected.messages);
+        refreshSavedConversations();
+        setStorageStatus("");
+        closeSidebar();
+      });
+
+      deleteConversationButton.addEventListener("click", () => {
+        if (!currentConversationId) return;
+        deleteSavedConversation(currentConversationId);
+      });
+
+      sidebarToggle.addEventListener("click", toggleSidebar);
+      sidebarBackdrop.addEventListener("click", closeSidebar);
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") closeSidebar();
       });

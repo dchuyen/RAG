@@ -1,18 +1,14 @@
 import argparse
 import json
-import sys
 from pathlib import Path
 from typing import Any
 
-from fastapi import HTTPException
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from app.services.embeddings import DEFAULT_MODEL, encode_single_text
-from app.services.ranking import rank_documents
+import requests
 
 DEFAULT_INPUT = Path(__file__).resolve().parent / "output" / "scraped_data_processed.json"
 DEFAULT_OUTPUT = Path(__file__).resolve().parent / "output" / "scraped_data_ranked.json"
+DEFAULT_API_URL = "http://127.0.0.1:8000"
+API_TIMEOUT = (10, 300)
 
 SAMPLE_TEXTS = [
     "Hà Nội là thủ đô của nước Cộng hòa Xã hội Chủ nghĩa Việt Nam.",
@@ -58,14 +54,59 @@ def save_results(output_file: Path, results: list[dict[str, Any]]) -> None:
         raise RuntimeError(f"Không thể lưu kết quả vào '{output_file}': {exc}") from exc
 
 
-def embed_single_for_testing(text: str, model: str) -> int:
+def request_api(
+    method: str,
+    url: str,
+    *,
+    params: dict[str, str] | None = None,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     try:
-        embedding = encode_single_text(text, model)
-    except HTTPException as exc:
-        print(f"Lỗi embedding (HTTP {exc.status_code}): {exc.detail}")
+        response = requests.request(
+            method,
+            url,
+            params=params,
+            json=payload,
+            timeout=API_TIMEOUT,
+        )
+        response.raise_for_status()
+    except requests.HTTPError as exc:
+        response = exc.response
+        detail = response.text if response is not None else str(exc)
+        status = response.status_code if response is not None else "?"
+        raise RuntimeError(f"Embedding API trả về HTTP {status}: {detail}") from exc
+    except requests.RequestException as exc:
+        raise RuntimeError(f"Không thể gọi Embedding API: {exc}") from exc
+
+    try:
+        result = response.json()
+    except ValueError as exc:
+        raise RuntimeError("Embedding API không trả về JSON hợp lệ.") from exc
+    if not isinstance(result, dict):
+        raise RuntimeError("Embedding API phải trả về một JSON object.")
+    return result
+
+
+def embed_single_for_testing(text: str, model: str | None, api_url: str) -> int:
+    params = {"text": text}
+    if model is not None:
+        params["model"] = model
+    try:
+        result = request_api(
+            "GET",
+            f"{api_url.rstrip('/')}/embeddings/single",
+            params=params,
+        )
+        embedding = result.get("embedding")
+        if not isinstance(embedding, list) or not all(
+            isinstance(value, (int, float)) for value in embedding
+        ):
+            raise RuntimeError("Embedding API không trả về vector hợp lệ.")
+    except RuntimeError as exc:
+        print(f"Lỗi embedding: {exc}")
         return 1
 
-    print(f"-> Model: {model}")
+    print(f"-> Model: {result.get('model', '(không rõ)')}")
     print(f"-> Số chiều (dimension): {len(embedding)}")
     print(f"-> Vector mẫu (5 phần tử đầu): {embedding[:5]}...")
     return 0
@@ -80,7 +121,12 @@ def main() -> int:
         nargs="?",
         help="Nội dung tìm kiếm; nếu bỏ trống, chương trình sẽ hỏi.",
     )
-    parser.add_argument("--model", default=DEFAULT_MODEL, help="Model HuggingFace")
+    parser.add_argument("--model", help="Model HuggingFace (mặc định theo cấu hình API)")
+    parser.add_argument(
+        "--api-url",
+        default=DEFAULT_API_URL,
+        help=f"URL gốc của API (mặc định: {DEFAULT_API_URL})",
+    )
     parser.add_argument(
         "--input",
         type=Path,
@@ -102,7 +148,7 @@ def main() -> int:
 
     if args.single:
         text = args.query or SAMPLE_TEXTS[0]
-        return embed_single_for_testing(text, args.model)
+        return embed_single_for_testing(text, args.model, args.api_url)
 
     query = args.query
     if query is None:
@@ -123,19 +169,31 @@ def main() -> int:
                     f"Trường 'metadata' của bản ghi {index} phải là JSON object."
                 )
             record["metadata"] = metadata
-        ranking = rank_documents(query.strip(), records, args.model)
-        ranked_records = ranking["results"]
+        payload: dict[str, Any] = {
+            "query": query.strip(),
+            "documents": records,
+        }
+        if args.model is not None:
+            payload["model"] = args.model
+        ranking = request_api(
+            "POST",
+            f"{args.api_url.rstrip('/')}/ranking",
+            payload=payload,
+        )
+        ranked_results = ranking.get("results")
+        if not isinstance(ranked_results, list) or not all(
+            isinstance(record, dict) for record in ranked_results
+        ):
+            raise RuntimeError("Ranking API không trả về danh sách kết quả hợp lệ.")
+        ranked_records = ranked_results
         save_results(args.output, ranked_records)
-    except HTTPException as exc:
-        print(f"Lỗi xếp hạng (HTTP {exc.status_code}): {exc.detail}")
-        return 1
     except RuntimeError as exc:
         print(f"Lỗi: {exc}")
         return 1
 
     print(
         f"Đã xếp hạng {len(ranked_records)} đoạn văn bằng model "
-        f"'{ranking['model']}'."
+        f"'{ranking.get('model', '(không rõ)')}'."
     )
     print(f"Đã lưu kết quả vào '{args.output}'.")
     for index, record in enumerate(ranked_records[:5], start=1):

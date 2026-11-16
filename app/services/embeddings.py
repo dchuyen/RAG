@@ -21,6 +21,13 @@ def get_embedding_model(model_name: str):
         ) from exc
 
 
+def preload_embedding_model(model_name: str = DEFAULT_MODEL):
+    """
+    Nạp trước mô hình embedding vào bộ nhớ cache khi khởi động server.
+    """
+    return get_embedding_model(model_name)
+
+
 def encode_texts(
     texts: list[str],
     model_name: str = DEFAULT_MODEL,

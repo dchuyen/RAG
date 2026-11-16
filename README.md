@@ -6,8 +6,9 @@ router modules are not yet fully populated to match every feature described belo
 so the project should be treated as a work-in-progress rather than a fully finished
 API.
 
-Note: this snapshot is intentionally a service-first scaffold. The app may not run
-end-to-end until the missing router modules are added and registered in `app/main.py`.
+Note: this snapshot is intentionally a service-first scaffold. The app starts with
+the `/chat`, `/health`, and `/semantic-search` routes; the other service endpoints
+are not yet wired in `app/main.py`.
 
 ## Run locally
 
@@ -17,15 +18,14 @@ source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 Open <http://127.0.0.1:8000/docs> for the interactive API documentation.
-The default embedding model is loaded during server startup, so the first
-startup may take longer while the model is downloaded. The server accepts
-requests after the model has loaded.
+Mô hình embedding (`intfloat/multilingual-e5-small`) được nạp tự động vào bộ nhớ ngay khi khởi động server thông qua FastAPI `lifespan`.
 
 ## Open the chat interface
 
-Configure `GEMINI_API_KEY` in `.env`, start the API with `uvicorn app.main:app --reload`,
+Configure `GEMINI_API_KEY` and `SERPAPI_API_KEY` in `.env`, start the API with `uvicorn app.main:app --reload`,
 then open <http://127.0.0.1:8000/chat> in your browser.
 
 If the chat reports `HTTP 429`, Gemini is rate-limiting requests or the account
@@ -46,6 +46,10 @@ Enter a search query; leave it blank to exit. Optional settings:
 ```bash
 python test/console_search.py --max-results 5 --region us-en --safesearch strict
 ```
+
+The search service uses SerpApi's Google engine. Add `SERPAPI_API_KEY` to `.env`
+before searching; get the key from your SerpApi account. Search settings use
+`--region` in `country-language` format, such as `vn-vi`.
 
 Found URLs are appended to `search_results.txt` in the current directory by
 default. Choose a different output file with `--output`:
@@ -87,10 +91,19 @@ code if any URL fails.
 
 ## Test embedding from the console
 
-Call the embedding and ranking services directly:
+Start the API, then use the console to call the embedding and ranking endpoints:
 
 ```bash
 python test/console_embed_rerank.py
+```
+
+The console calls `GET /embeddings/single` when using `--single`, and
+`POST /ranking` to rank text records. It connects to `http://127.0.0.1:8000`
+by default; use `--api-url` to choose another API server. For example:
+
+```bash
+python test/console_embed_rerank.py --single "Một câu tiếng Việt" \
+  --api-url http://127.0.0.1:8000
 ```
 
 ## Chat with Gemini from the console
@@ -188,7 +201,7 @@ copied from the request. If omitted, `metadata` is an empty object.
 - `GET /health` — health check
 - `GET /chat` — web chat UI for trying the Gemini chat endpoint
 - `POST /chat/gemini` — send a chat request to Gemini (requires `GEMINI_API_KEY`)
-- `GET /search?q=FastAPI&max_results=10` — search the web with DuckDuckGo
+- `GET /search?q=FastAPI&max_results=10` — search Google through SerpApi (requires `SERPAPI_API_KEY`)
 - `GET /scrape?url=https%3A%2F%2Fwww.python.org%2Fabout%2F` — extract webpage text and metadata with Trafilatura
 - `POST /embeddings` — compute dense vector embeddings for a list of texts (default: `intfloat/multilingual-e5-small`, 384 dimensions)
 - `GET /embeddings/single?text=...` — compute dense vector embedding for a single text
@@ -198,11 +211,11 @@ copied from the request. If omitted, `metadata` is an empty object.
 
 Set `GEMINI_API_KEY` in a local `.env` file before starting the API to use the chat
 endpoint. Add your Gemini API key to `.env`; `.env` is excluded from Git. The
-endpoint defaults to `gemini-2.5-flash`; the model, temperature, and maximum output tokens can
+endpoint defaults to `gemini-3.5-flash-lite`; the model, temperature, and maximum output tokens can
 be supplied in the request:
 
 ```bash
-# Add GEMINI_API_KEY=your-key to .env.
+# Add GEMINI_API_KEY=your-key and SERPAPI_API_KEY=your-key to .env.
 uvicorn app.main:app --reload
 ```
 
@@ -236,25 +249,25 @@ curl -X POST http://127.0.0.1:8000/semantic-search \
 ```
 
 The response includes ranked results with source metadata and relevance scores;
-chunks sharing a source are combined into one result. It also includes counts
+each matching chunk remains a separate result. It also includes counts
 for searched pages and chunks, and any pages that could not be scraped.
 `step_timings` reports server-side elapsed seconds for search, scrape, chunking,
 embedding, and ranking. A failed page does not prevent other search results
-from being processed. The combined results are returned in the API response
+from being processed. The ranked results are returned in the API response
 and are no longer saved to a file.
 
-To merge the ranked chunks saved by `test/console_embed_rerank.py` without
-running semantic search again, run:
+To export the ranked chunks saved by `test/console_embed_rerank.py` as Markdown
+without running semantic search again, run:
 
 ```bash
-python test/console_source_merge.py
+python test/console_markdown_export.py
 ```
 
-By default, this reads `test/output/scraped_data_ranked.json`, merges records
-by source, writes the Markdown result to `test/output/scraped_data_merged.md`,
+By default, this reads `test/output/scraped_data_ranked.json`, keeps each record
+separate, writes the Markdown result to `test/output/scraped_data_markdown.md`,
 and prints it to the console.
 
-To run semantic search through the service directly:
+Start the API server, then run semantic search through `POST /semantic-search`:
 
 ```bash
 python test/console_semantic_search.py
@@ -267,6 +280,9 @@ python test/console_semantic_search.py "tiến độ sân bay Long Thành" \
   --max-results 5 --chunk-size 1000 --chunk-overlap 100 \
   --output semantic_search_response.json
 ```
+
+The console sends requests to `http://127.0.0.1:8000` by default. Use
+`--api-url` to connect to a different API server.
 
 The script prints processing counts, timing, and scrape failures without
 printing ranked results or matched text. It can save the full result, including
@@ -300,25 +316,25 @@ starting the API.
 
 ## Current project structure
 
-This checkout is a service-oriented scaffold rather than a fully wired router package.
-The main implementation modules currently live under `app/services`, while the
-`app/routers` package only contains the initial routes for the chat page and health
-check:
+This checkout is a service-oriented scaffold. The main implementation modules
+currently live under `app/services`; the active routes are registered in
+`app/main.py`:
 
 - `app/main.py` — app bootstrap and lifecycle setup
 - `app/routers/chat_ui.py` — `/chat` page route
+- `app/routers/embeddings.py` — `/embeddings`, `/embeddings/single`, and `/ranking` API routes
+- `app/routers/semantic_search.py` — `/semantic-search` API route
 - `app/routers/health.py` — `/health` route
-- `app/services/search.py` — DuckDuckGo web search logic
+- `app/services/search.py` — Google web search through SerpApi
 - `app/services/scrape.py` — webpage extraction with Trafilatura
 - `app/services/embeddings.py` — dense embedding logic
 - `app/services/ranking.py` — cosine-relevance ranking logic
 - `app/services/semantic_search.py` — end-to-end search/scrape/chunk/rank flow
 - `app/services/chunks.py` — paragraph-aware chunking logic
 - `app/services/gemini.py` — Gemini chat integration and system prompt rules
-- `app/services/source_merge.py` — merge ranked chunks by source
+- `app/services/markdown_export.py` — load ranked chunks and render them as Markdown
 - `app/static/` — frontend assets for the chat UI
 - `test/` — console scripts and validation helpers
 
-The README below documents the intended API flow for the project. Some route files
-listed in older docs were not yet created in this snapshot, so the app should be
-considered a work in progress until those router modules are added and registered.
+The app remains a work in progress; only the routes listed above are currently
+registered.

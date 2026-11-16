@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from fastapi import HTTPException
 
 from app.services.semantic_search import semantic_search
-from app.services.source_merge import render_merged_documents_as_markdown
+from app.services.markdown_export import render_documents_as_markdown
 from app.services.system_rule import SYSTEM_RULE
 
 load_dotenv()
@@ -158,13 +158,14 @@ def _parse_assistant_action(
     return action, value.strip()
 
 
-def _format_search_results(search_response: dict[str, Any]) -> str:
-    results = search_response["results"]
+def _format_search_results(search_response: dict[str, Any], top_k: int = 3) -> str:
+    results = search_response.get("results", [])
     if not results:
         return "Không tìm thấy tài liệu phù hợp. Hãy nói rõ là chưa tìm thấy nguồn để xác nhận."
 
-    best_result = max(results, key=lambda result: result["relevance_score"])
-    return render_merged_documents_as_markdown([best_result])
+    sorted_results = sorted(results, key=lambda result: result["relevance_score"], reverse=True)
+    top_results = sorted_results[:top_k]
+    return render_documents_as_markdown(top_results)
 
 
 def chat_with_gemini(
@@ -200,10 +201,15 @@ def chat_with_gemini(
         json_mode=True,
     )
     action, action_value = _parse_assistant_action(result["content"])
+    system_data = None
+    search_query = None
+    search_action = None
 
     if action == "search":
         search_query = action_value
+        search_action = result["content"]
         search_response = semantic_search(query=search_query)
+        system_data = _format_search_results(search_response)
         request_messages.extend(
             [
                 {"role": "assistant", "content": result["content"]},
@@ -211,7 +217,7 @@ def chat_with_gemini(
                     "role": "user",
                     "content": (
                         f"Kết quả semantic search cho truy vấn '{search_query}':\n"
-                        f"{_format_search_results(search_response)}\n\n"
+                        f"{system_data}\n\n"
                         "Hãy trả lời câu hỏi ban đầu dựa trên các nguồn này. "
                         "Không phát ra yêu cầu search lần nữa trong lượt trả lời này."
                     ),
@@ -227,4 +233,7 @@ def chat_with_gemini(
         "message": message,
         "model": model,
         "usage": result["usage"],
+        "search_query": search_query,
+        "search_action": search_action,
+        "system_data": system_data,
     }

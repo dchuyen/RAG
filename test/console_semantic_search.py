@@ -1,25 +1,34 @@
 import argparse
 import json
-import sys
 from pathlib import Path
 from time import perf_counter
 from typing import Any
 
-from fastapi import HTTPException
+import requests
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from app.services.embeddings import DEFAULT_MODEL
-from app.services.semantic_search import semantic_search
+DEFAULT_API_URL = "http://127.0.0.1:8000"
+API_TIMEOUT = (10, 300)
 
 
-def run_semantic_search(payload: dict[str, Any]) -> dict[str, Any]:
+def run_semantic_search(payload: dict[str, Any], api_url: str) -> dict[str, Any]:
+    endpoint = f"{api_url.rstrip('/')}/semantic-search"
     try:
-        return semantic_search(**payload)
-    except HTTPException as exc:
+        response = requests.post(endpoint, json=payload, timeout=API_TIMEOUT)
+        response.raise_for_status()
+    except requests.HTTPError as exc:
         raise RuntimeError(
-            f"Semantic-search service trả về HTTP {exc.status_code}: {exc.detail}"
+            f"Semantic-search API trả về HTTP {response.status_code}: {response.text}"
         ) from exc
+    except requests.RequestException as exc:
+        raise RuntimeError(f"Không thể gọi Semantic-search API: {exc}") from exc
+
+    try:
+        result = response.json()
+    except ValueError as exc:
+        raise RuntimeError("Semantic-search API không trả về JSON hợp lệ.") from exc
+    if not isinstance(result, dict):
+        raise RuntimeError("Semantic-search API phải trả về một JSON object.")
+    return result
 
 
 def save_response(output_file: Path, result: dict[str, Any]) -> None:
@@ -47,7 +56,7 @@ def print_results(result: dict[str, Any], client_wait_seconds: float) -> None:
     print(f"- Chunks: {result['step_timings']['chunk_seconds']:.3f} giây")
     print(f"- Embeddings: {result['step_timings']['embedding_seconds']:.3f} giây")
     print(f"- Ranking: {result['step_timings']['ranking_seconds']:.3f} giây")
-    print(f"- Tổng thời gian chạy service: {client_wait_seconds:.3f} giây")
+    print(f"- Tổng thời gian chờ API: {client_wait_seconds:.3f} giây")
 
     failures = result.get("failed_pages", [])
     if isinstance(failures, list) and failures:
@@ -61,7 +70,7 @@ def print_results(result: dict[str, Any], client_wait_seconds: float) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Chạy service tìm kiếm ngữ nghĩa trên web."
+        description="Gọi API tìm kiếm ngữ nghĩa trên web."
     )
     parser.add_argument(
         "query",
@@ -69,7 +78,7 @@ def main() -> int:
         help="Nội dung tìm kiếm; nếu bỏ trống, chương trình sẽ hỏi.",
     )
     parser.add_argument("--max-results", type=int, default=3, choices=range(1, 51))
-    parser.add_argument("--region", default="wt-wt", help="Mã vùng tìm kiếm")
+    parser.add_argument("--region", default="vn-vi", help="Mã vùng tìm kiếm")
     parser.add_argument(
         "--safesearch",
         choices=("off", "moderate", "strict"),
@@ -77,7 +86,15 @@ def main() -> int:
     )
     parser.add_argument("--chunk-size", type=int, default=1000)
     parser.add_argument("--chunk-overlap", type=int, default=100)
-    parser.add_argument("--model", default=DEFAULT_MODEL, help="Model embedding")
+    parser.add_argument(
+        "--model",
+        help="Model embedding (mặc định theo cấu hình của API)",
+    )
+    parser.add_argument(
+        "--api-url",
+        default=DEFAULT_API_URL,
+        help=f"URL gốc của API (mặc định: {DEFAULT_API_URL})",
+    )
     parser.add_argument(
         "--output",
         type=Path,
@@ -108,12 +125,13 @@ def main() -> int:
         "safesearch": args.safesearch,
         "chunk_size": args.chunk_size,
         "chunk_overlap": args.chunk_overlap,
-        "model": args.model,
     }
+    if args.model is not None:
+        payload["model"] = args.model
 
     try:
         request_started = perf_counter()
-        result = run_semantic_search(payload)
+        result = run_semantic_search(payload, args.api_url)
         client_wait_seconds = perf_counter() - request_started
         print_results(result, client_wait_seconds)
         if args.output:

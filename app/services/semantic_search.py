@@ -8,13 +8,29 @@ from app.services.embeddings import DEFAULT_MODEL, encode_texts
 from app.services.ranking import prepare_embedding_texts, rank_with_embeddings
 from app.services.scrape import scrape_webpage
 from app.services.search import search_web
-from app.services.source_merge import merge_ranked_documents_by_source
+from app.services.markdown_export import sort_ranked_documents
+
+# Từ ngữ phụ chỉ ngày tháng mà Gemini hay thêm vào query – loại bỏ trước khi tìm
+_DATE_NOISE_PATTERN = (
+    r"\s*(ngày\s+\d{1,2}\s+tháng\s+\d{1,2}\s+năm\s+\d{4}"
+    r"|tháng\s+\d{1,2}\s+năm\s+\d{4}"
+    r"|\d{1,2}/\d{1,2}/\d{4}"
+    r"|(?:ngày\s+)?\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?)"
+)
+
+import re as _re
+
+
+def _strip_date_noise(query: str) -> str:
+    """Loại bỏ phần ngày tháng cụ thể khỏi query để tránh làm hỏng kết quả tìm kiếm."""
+    return _re.sub(_DATE_NOISE_PATTERN, "", query, flags=_re.IGNORECASE).strip()
+
 
 
 def semantic_search(
     query: str,
-    max_results: int = 3,
-    region: str = "wt-wt",
+    max_results: int = 5,
+    region: str = "vn-vi",
     safesearch: Literal["off", "moderate", "strict"] = "moderate",
     chunk_size: int = 1000,
     chunk_overlap: int = 100,
@@ -30,8 +46,9 @@ def semantic_search(
         )
 
     search_started = perf_counter()
+    search_query = _strip_date_noise(cleaned_query)
     urls = search_web(
-        q=cleaned_query,
+        q=search_query,
         max_results=max_results,
         region=region,
         safesearch=safesearch,
@@ -106,7 +123,7 @@ def semantic_search(
     )
     embedding_seconds = perf_counter() - embedding_started
     ranking_started = perf_counter()
-    ranked = merge_ranked_documents_by_source(
+    ranked = sort_ranked_documents(
         rank_with_embeddings(cleaned_query, model, documents, embeddings)
     )
     ranking_seconds = perf_counter() - ranking_started

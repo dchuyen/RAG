@@ -1,31 +1,21 @@
-import asyncio
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from app.services import embeddings as embedding_service
-from app.routers import (
-    chat_ui,
-    chunks,
-    embeddings,
-    gemini,
-    health,
-    ranking,
-    root,
-    scrape,
-    search,
-    semantic_search,
-)
+from app.routers import chat_ui, embeddings, gemini, health, semantic_search
+from app.services.embeddings import DEFAULT_MODEL, preload_embedding_model
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI):
-    await asyncio.to_thread(
-        embedding_service.get_embedding_model,
-        embedding_service.DEFAULT_MODEL,
-    )
+async def lifespan(app: FastAPI):
+    logger.info("Đang nạp mô hình embedding '%s' khi khởi động server...", DEFAULT_MODEL)
+    preload_embedding_model(DEFAULT_MODEL)
+    logger.info("Nạp mô hình embedding thành công.")
     yield
 
 
@@ -42,13 +32,8 @@ app.mount(
     name="static",
 )
 
-app.include_router(root.router)
 app.include_router(chat_ui.router)
-app.include_router(health.router)
 app.include_router(gemini.router)
-app.include_router(search.router)
-app.include_router(scrape.router)
+app.include_router(health.router)
 app.include_router(embeddings.router)
-app.include_router(ranking.router)
 app.include_router(semantic_search.router)
-app.include_router(chunks.router)

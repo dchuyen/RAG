@@ -1,6 +1,6 @@
-https://github.com/dchuyen/RAG.gitimport argparse
+import argparse
 import sys
-from pathlib import Path
+from padaaecd86ea29847db6bac3958360f7fd64e03d09a54ecabf99b0800cd631ce97thlib import Path
 
 from fastapi import HTTPException
 
@@ -42,7 +42,7 @@ def main() -> None:
         metavar="1-50",
         help="Số kết quả muốn lấy (mặc định: 5)",
     )
-    parser.add_argument("--region", default="wt-wt", help="Mã vùng tìm kiếm")
+    parser.add_argument("--region", default="vn-vi", help="Mã vùng tìm kiếm")
     parser.add_argument(
         "--safesearch",
         choices=("off", "moderate", "strict"),

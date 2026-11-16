@@ -37,44 +37,19 @@ def load_ranked_documents(
     return documents
 
 
-def merge_ranked_documents_by_source(
+def sort_ranked_documents(
     documents: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    merged: list[dict[str, Any]] = []
-    document_by_source: dict[str, dict[str, Any]] = {}
-
-    for document in documents:
-        metadata = document["metadata"]
-        source = metadata.get("source")
-        if not isinstance(source, str) or not source.strip():
-            merged.append(document.copy())
-            continue
-
-        existing = document_by_source.get(source)
-        if existing is None:
-            existing = {
-                **document,
-                "metadata": metadata.copy(),
-            }
-            document_by_source[source] = existing
-            merged.append(existing)
-            continue
-
-        existing["text"] = f"{existing['text']}\n\n{document['text']}"
-        existing["relevance_score"] = max(
-            existing["relevance_score"],
-            document["relevance_score"],
-        )
-
-    merged.sort(
+    ranked = [document.copy() for document in documents]
+    ranked.sort(
         key=lambda document: document["relevance_score"],
         reverse=True,
     )
-    return merged
+    return ranked
 
 
-def render_merged_documents_as_markdown(documents: list[dict[str, Any]]) -> str:
-    sections = ["# Kết quả gộp theo nguồn"]
+def render_documents_as_markdown(documents: list[dict[str, Any]]) -> str:
+    sections = ["# Kết quả theo mức độ liên quan"]
     for index, document in enumerate(documents, start=1):
         metadata = document["metadata"]
         title = metadata.get("title")
@@ -97,9 +72,3 @@ def render_merged_documents_as_markdown(documents: list[dict[str, Any]]) -> str:
         sections.extend(["", document["text"], ""])
 
     return "\n".join(sections).rstrip() + "\n"
-
-
-def merge_ranked_file(
-    input_file: Path = DEFAULT_INPUT_FILE,
-) -> list[dict[str, Any]]:
-    return merge_ranked_documents_by_source(load_ranked_documents(input_file))
