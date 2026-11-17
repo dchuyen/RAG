@@ -49,6 +49,21 @@ const form = document.querySelector("#chat-form");
               && (message.systemData === undefined || typeof message.systemData === "string")
               && (message.searchQuery === undefined || typeof message.searchQuery === "string")
               && (message.searchAction === undefined || typeof message.searchAction === "string")
+              && (
+                message.searchResults === undefined
+                || (
+                  Array.isArray(message.searchResults)
+                  && message.searchResults.every((result) => (
+                    result
+                    && typeof result.text === "string"
+                    && result.metadata
+                    && typeof result.metadata === "object"
+                    && !Array.isArray(result.metadata)
+                    && typeof result.relevance_score === "number"
+                    && Number.isFinite(result.relevance_score)
+                  ))
+                )
+              )
             ))
           ));
           if (savedConversations.length !== parsed.length) {
@@ -120,12 +135,13 @@ const form = document.querySelector("#chat-form");
           title,
           createdAt: existing?.createdAt || now,
           updatedAt: now,
-          messages: history.map(({ role, content, systemData, searchQuery, searchAction }) => ({
+          messages: history.map(({ role, content, systemData, searchQuery, searchAction, searchResults }) => ({
             role,
             content,
             ...(typeof systemData === "string" ? { systemData } : {}),
             ...(typeof searchQuery === "string" ? { searchQuery } : {}),
             ...(typeof searchAction === "string" ? { searchAction } : {}),
+            ...(Array.isArray(searchResults) ? { searchResults } : {}),
           })),
         };
         const index = savedConversations.findIndex((item) => item.id === currentConversationId);
@@ -424,11 +440,49 @@ const form = document.querySelector("#chat-form");
         }
       }
 
-      function addSystemData(bubble, systemData, searchQuery, searchAction) {
+      function addSystemData(bubble, systemData, searchQuery, searchAction, searchResults) {
         const hasSearchQuery = typeof searchQuery === "string" && searchQuery.trim();
         const hasSearchAction = typeof searchAction === "string" && searchAction.trim();
         const hasSystemData = typeof systemData === "string" && systemData.trim();
-        if (!hasSearchQuery && !hasSearchAction && !hasSystemData) return;
+        const validSearchResults = Array.isArray(searchResults)
+          ? searchResults.filter((result) => (
+            result
+            && typeof result.text === "string"
+            && result.metadata
+            && typeof result.metadata === "object"
+            && !Array.isArray(result.metadata)
+            && typeof result.relevance_score === "number"
+            && Number.isFinite(result.relevance_score)
+          ))
+          : [];
+        if (!hasSearchQuery && !hasSearchAction && !hasSystemData && !validSearchResults.length) return;
+
+        if (validSearchResults.length) {
+          const panel = document.createElement("section");
+          panel.className = "similarity-panel";
+          panel.setAttribute("aria-label", "Độ tương đồng của kết quả tìm kiếm");
+          const heading = document.createElement("p");
+          heading.className = "similarity-heading";
+          heading.textContent = "Similarity tìm kiếm";
+          const list = document.createElement("ul");
+          list.className = "similarity-list";
+          validSearchResults.forEach((result, index) => {
+            const item = document.createElement("li");
+            const source = document.createElement("span");
+            source.className = "similarity-source";
+            source.textContent = result.metadata.title
+              || result.metadata.source
+              || `Đoạn ${index + 1}`;
+            const score = document.createElement("span");
+            score.className = "similarity-score";
+            score.textContent = `${(result.relevance_score * 100).toFixed(1)}%`;
+            score.title = `Cosine similarity: ${result.relevance_score.toFixed(4)}`;
+            item.append(source, score);
+            list.append(item);
+          });
+          panel.append(heading, list);
+          bubble.append(panel);
+        }
 
         const details = document.createElement("details");
         details.className = "system-data";
@@ -474,6 +528,7 @@ const form = document.querySelector("#chat-form");
         systemData = null,
         searchQuery = null,
         searchAction = null,
+        searchResults = null,
       ) {
         emptyState.hidden = true;
         const row = document.createElement("article");
@@ -489,7 +544,7 @@ const form = document.querySelector("#chat-form");
         else {
           renderMarkdown(bubble, content);
           if (role === "assistant") {
-            addSystemData(bubble, systemData, searchQuery, searchAction);
+            addSystemData(bubble, systemData, searchQuery, searchAction, searchResults);
           }
         }
         row.append(label, bubble);
@@ -503,8 +558,8 @@ const form = document.querySelector("#chat-form");
         history.splice(0, history.length, ...messages);
         conversation.querySelectorAll(".message").forEach((message) => message.remove());
         emptyState.hidden = messages.length > 0;
-        messages.forEach(({ role, content, systemData, searchQuery, searchAction }) => (
-          addMessage(role, content, false, systemData, searchQuery, searchAction)
+        messages.forEach(({ role, content, systemData, searchQuery, searchAction, searchResults }) => (
+          addMessage(role, content, false, systemData, searchQuery, searchAction, searchResults)
         ));
         conversation.scrollTo({ top: conversation.scrollHeight, behavior: "auto" });
         updateConversationNavigation();
@@ -617,18 +672,20 @@ const form = document.querySelector("#chat-form");
           const systemData = typeof result.system_data === "string" ? result.system_data : null;
           const searchQuery = typeof result.search_query === "string" ? result.search_query : null;
           const searchAction = typeof result.search_action === "string" ? result.search_action : null;
+          const searchResults = Array.isArray(result.search_results) ? result.search_results : null;
           history.push({
             role: "assistant",
             content: result.message,
             systemData,
             searchQuery,
             searchAction,
+            searchResults,
           });
           persistCurrentConversation();
           const bubble = pending.querySelector(".bubble");
           bubble.replaceChildren();
           renderMarkdown(bubble, result.message);
-          addSystemData(bubble, systemData, searchQuery, searchAction);
+          addSystemData(bubble, systemData, searchQuery, searchAction, searchResults);
           updateConversationNavigation();
           scrollConversationToBottom();
         } catch (error) {

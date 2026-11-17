@@ -4,6 +4,7 @@ from typing import Any, Literal
 from fastapi import HTTPException
 
 from app.services.chunks import split_text
+from app.services.chroma import query_documents, store_documents
 from app.services.embeddings import DEFAULT_MODEL, encode_texts
 from app.services.ranking import prepare_embedding_texts, rank_with_embeddings
 from app.services.scrape import scrape_webpage
@@ -19,6 +20,8 @@ _DATE_NOISE_PATTERN = (
 )
 
 import re as _re
+
+CHROMA_MATCH_THRESHOLD = 0.9
 
 
 def _strip_date_noise(query: str) -> str:
@@ -44,6 +47,38 @@ def semantic_search(
             status_code=422,
             detail="chunk_overlap phải nhỏ hơn chunk_size.",
         )
+
+    cache_lookup_started = perf_counter()
+    cached_response = query_documents(
+        query=cleaned_query,
+        n_results=5,
+        model=model,
+    )
+    cache_lookup_seconds = perf_counter() - cache_lookup_started
+    cached_results = [
+        result
+        for result in cached_response["results"]
+        if result["relevance_score"] >= CHROMA_MATCH_THRESHOLD
+    ]
+    if cached_results:
+        return {
+            "query": cleaned_query,
+            "model": model,
+            "cache_hit": True,
+            "searched_url_count": 0,
+            "scraped_page_count": 0,
+            "total_chunks": len(cached_results),
+            "failed_pages": [],
+            "results": cached_results,
+            "step_timings": {
+                "cache_lookup_seconds": cache_lookup_seconds,
+                "search_seconds": 0.0,
+                "scrape_seconds": 0.0,
+                "chunk_seconds": 0.0,
+                "embedding_seconds": 0.0,
+                "ranking_seconds": 0.0,
+            },
+        }
 
     search_started = perf_counter()
     search_query = _strip_date_noise(cleaned_query)
@@ -104,9 +139,11 @@ def semantic_search(
             "searched_url_count": len(urls),
             "scraped_page_count": scraped_page_count,
             "total_chunks": 0,
+            "cache_hit": False,
             "failed_pages": failed_pages,
             "results": [],
             "step_timings": {
+                "cache_lookup_seconds": cache_lookup_seconds,
                 "search_seconds": search_seconds,
                 "scrape_seconds": scrape_seconds,
                 "chunk_seconds": chunk_seconds,
@@ -127,16 +164,19 @@ def semantic_search(
         rank_with_embeddings(cleaned_query, model, documents, embeddings)
     )
     ranking_seconds = perf_counter() - ranking_started
+    store_documents(documents, model=model, embeddings=embeddings[1:])
 
     return {
         "query": cleaned_query,
         "model": model,
+        "cache_hit": False,
         "searched_url_count": len(urls),
         "scraped_page_count": scraped_page_count,
         "total_chunks": len(documents),
         "failed_pages": failed_pages,
         "results": ranked,
         "step_timings": {
+            "cache_lookup_seconds": cache_lookup_seconds,
             "search_seconds": search_seconds,
             "scrape_seconds": scrape_seconds,
             "chunk_seconds": chunk_seconds,

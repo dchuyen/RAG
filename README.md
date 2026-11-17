@@ -23,6 +23,28 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 Open <http://127.0.0.1:8000/docs> for the interactive API documentation.
 Mô hình embedding (`intfloat/multilingual-e5-small`) được nạp tự động vào bộ nhớ ngay khi khởi động server thông qua FastAPI `lifespan`.
 
+## ChromaDB vector storage
+
+`app.services.chroma` provides `store_documents()` and `query_documents()` for
+persisting document chunks and retrieving the most similar ones. ChromaDB uses
+the existing embedding model and stores its local database under `data/chroma/`
+by default. Set `CHROMA_DB_PATH` to change the storage directory and
+`CHROMA_COLLECTION_NAME` to change the collection name.
+
+Semantic search first checks ChromaDB for chunks with cosine similarity of at
+least `0.9`. Matching chunks are returned without a new web search; on a cache
+miss, the service performs its usual web search and stores the resulting chunks
+for future queries.
+
+Inspect stored records from the project root:
+
+```bash
+python test/console_chroma.py --limit 10
+```
+
+Use `--offset` to page through larger collections, for example
+`python test/console_chroma.py --limit 10 --offset 10`.
+
 ## Open the chat interface
 
 Configure `GEMINI_API_KEY` and `SERPAPI_API_KEY` in `.env`, start the API with `uvicorn app.main:app --reload`,

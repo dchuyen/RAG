@@ -204,11 +204,13 @@ def chat_with_gemini(
     system_data = None
     search_query = None
     search_action = None
+    search_results = None
 
     if action == "search":
         search_query = action_value
         search_action = result["content"]
         search_response = semantic_search(query=search_query)
+        search_results = search_response.get("results", [])[:3]
         system_data = _format_search_results(search_response)
         request_messages.extend(
             [
@@ -235,5 +237,6 @@ def chat_with_gemini(
         "usage": result["usage"],
         "search_query": search_query,
         "search_action": search_action,
+        "search_results": search_results,
         "system_data": system_data,
     }
