@@ -7,21 +7,26 @@ so the project should be treated as a work-in-progress rather than a fully finis
 API.
 
 Note: this snapshot is intentionally a service-first scaffold. The app starts with
-the `/chat`, `/health`, and `/semantic-search` routes; the other service endpoints
-are not yet wired in `app/main.py`.
+the `/chat` and `/semantic-search` routes; the other service endpoints are not yet
+wired in `app/main.py`.
 
 ## Run locally
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+python3.12 -m venv .venv312
+source .venv312/bin/activate
+python -m pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu "torch==2.15.0+cpu"
+python -m pip install --no-cache-dir -r requirements.txt
 uvicorn app.main:app --reload
 ```
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 Open <http://127.0.0.1:8000/docs> for the interactive API documentation.
-Mô hình embedding (`intfloat/multilingual-e5-small`) được nạp tự động vào bộ nhớ ngay khi khởi động server thông qua FastAPI `lifespan`.
+Semantic search hiện không tạo embedding hoặc lưu chunk vào ChromaDB. Kết quả
+được xếp hạng sơ bộ bằng BM25 và độ gần của ngày, sau đó được cross-encoder
+xếp hạng lại với ưu tiên cho ngày gần hơn. Model cross-encoder chỉ được nạp khi
+có yêu cầu xếp hạng. Các endpoint embedding riêng vẫn hoạt động và chỉ nạp model
+khi được gọi.
 
 ## ChromaDB vector storage
 
@@ -30,11 +35,12 @@ persisting document chunks and retrieving the most similar ones. ChromaDB uses
 the existing embedding model and stores its local database under `data/chroma/`
 by default. Set `CHROMA_DB_PATH` to change the storage directory and
 `CHROMA_COLLECTION_NAME` to change the collection name.
+Set `CHROMA_QUERY_CACHE_COLLECTION_NAME` to change the dedicated semantic
+query-cache collection name.
 
-Semantic search first checks ChromaDB for chunks with cosine similarity of at
-least `0.9`. Matching chunks are returned without a new web search; on a cache
-miss, the service performs its usual web search and stores the resulting chunks
-for future queries.
+ChromaDB storage and query helpers remain available in `app.services.chroma`,
+but the current semantic-search flow does not generate embeddings, read from
+ChromaDB, or store chunks there.
 
 Inspect stored records from the project root:
 
@@ -47,13 +53,14 @@ Use `--offset` to page through larger collections, for example
 
 ## Open the chat interface
 
-Configure `GEMINI_API_KEY` and `SERPAPI_API_KEY` in `.env`, start the API with `uvicorn app.main:app --reload`,
-then open <http://127.0.0.1:8000/chat> in your browser.
+Configure `GEMINI_API_KEY`, `GROQ_API_KEY`, and `SERPAPI_API_KEY` in `.env`,
+start the API with `uvicorn app.main:app --reload`, then open
+<http://127.0.0.1:8000/chat> in your browser.
 
-If the chat reports `HTTP 429`, Gemini is rate-limiting requests or the account
-has reached a usage limit. Wait before retrying, then check the usage and limits
-for your Google AI account. A response that triggers web search can make two
-Gemini requests in one chat turn.
+If the chat reports `HTTP 429`, the selected provider is rate-limiting requests
+or the account has reached a usage limit. Wait before retrying and check that
+provider's usage and limits. A response that triggers web search can make two
+requests in one chat turn.
 
 ## Test search from the console
 
@@ -69,9 +76,10 @@ Enter a search query; leave it blank to exit. Optional settings:
 python test/console_search.py --max-results 5 --region us-en --safesearch strict
 ```
 
-The search service uses SerpApi's Google engine. Add `SERPAPI_API_KEY` to `.env`
-before searching; get the key from your SerpApi account. Search settings use
-`--region` in `country-language` format, such as `vn-vi`.
+The search service uses SerpApi's DuckDuckGo engine. Add `SERPAPI_API_KEY` to
+`.env` before searching; get the key from your SerpApi account. Search settings
+use `--region` in `country-language` format. The default `vn-vi` is mapped to
+DuckDuckGo's supported `vn-en` region.
 
 Found URLs are appended to `search_results.txt` in the current directory by
 default. Choose a different output file with `--output`:
@@ -153,8 +161,9 @@ python test/console_embed_rerank.py "Trí tuệ nhân tạo đang phát triển 
 
 To search the text chunks in `scraped_data_processed.json`, run the same
 command without a query and enter the search text when prompted. The script
-embeds the query and each chunk, sorts the chunks by cosine similarity, and
-saves the ranked records with a `relevance_score` field to
+sends the query and chunks to the ranking API, which uses BM25 and date proximity
+to establish an initial order before cross-encoder reranking, then saves the
+ranked records with a `relevance_score` field to
 `scraped_data_ranked.json`:
 
 ```bash
@@ -220,28 +229,29 @@ copied from the request. If omitted, `metadata` is an empty object.
 ## Endpoints
 
 - `GET /` — welcome message
-- `GET /health` — health check
-- `GET /chat` — web chat UI for trying the Gemini chat endpoint
+- `GET /chat` — web chat UI for choosing Gemini or Groq
 - `POST /chat/gemini` — send a chat request to Gemini (requires `GEMINI_API_KEY`)
-- `GET /search?q=FastAPI&max_results=10` — search Google through SerpApi (requires `SERPAPI_API_KEY`)
+- `POST /chat/groq` — send a chat request to Groq (requires `GROQ_API_KEY`)
+- `GET /search?q=FastAPI&max_results=10` — search DuckDuckGo through SerpApi (requires `SERPAPI_API_KEY`)
 - `GET /scrape?url=https%3A%2F%2Fwww.python.org%2Fabout%2F` — extract webpage text and metadata with Trafilatura
-- `POST /embeddings` — compute dense vector embeddings for a list of texts (default: `intfloat/multilingual-e5-small`, 384 dimensions)
-- `GET /embeddings/single?text=...` — compute dense vector embedding for a single text
-- `POST /ranking` — embed a search query and documents, then sort documents by cosine similarity
-- `POST /semantic-search` — search the web, scrape pages, split text into chunks, embed, and rank by relevance
+- `POST /embeddings` — compute dense vector embeddings for a list of texts (default: `intfloat/multilingual-e5-small`, 384 dimensions); supports `text_type: "query" | "passage"` (default: `"passage"`)
+- `GET /embeddings/single?text=...` — compute dense vector embedding for a single text; supports `text_type: "query" | "passage"` (default: `"query"`)
+- `POST /ranking` — rank documents with BM25, date proximity, and cross-encoder reranking
+- `POST /semantic-search` — search the web, scrape pages, split text into chunks, and rank by relevance
 - `POST /chunks/split` — split text into paragraph-aware chunks using LangChain
 
-Set `GEMINI_API_KEY` in a local `.env` file before starting the API to use the chat
-endpoint. Add your Gemini API key to `.env`; `.env` is excluded from Git. The
-endpoint defaults to `gemini-3.5-flash-lite`; the model, temperature, and maximum output tokens can
-be supplied in the request:
+Set the API key for the provider you want to use in a local `.env` file before
+starting the API. Add `GEMINI_API_KEY` and/or `GROQ_API_KEY` to `.env`; `.env` is
+excluded from Git. Gemini defaults to `gemini-3.5-flash-lite`, and Groq defaults
+to `llama-3.3-70b-versatile`. The model, temperature, and maximum output tokens
+can be supplied in the request:
 
 ```bash
-# Add GEMINI_API_KEY=your-key and SERPAPI_API_KEY=your-key to .env.
+# Add GEMINI_API_KEY, GROQ_API_KEY, and SERPAPI_API_KEY to .env as needed.
 uvicorn app.main:app --reload
 ```
 
-Then send a chat request:
+Then send a Gemini chat request (use `/chat/groq` and `GROQ_API_KEY` for Groq):
 
 ```bash
 curl -X POST http://127.0.0.1:8000/chat/gemini \
@@ -250,16 +260,16 @@ curl -X POST http://127.0.0.1:8000/chat/gemini \
 ```
 
 You can also open <http://127.0.0.1:8000/chat> in a browser to try the chat
-interface. It keeps conversation context, supports selecting a model, and sends
-requests to the same `/chat/gemini` endpoint.
+interface. It keeps conversation context and lets you choose Gemini or Groq;
+the interface sends requests to the matching endpoint.
 
 The response contains the assistant `message`, the model used, and token `usage`
-when provided by Gemini.
+when provided by the selected provider.
 
-The chat API asks Gemini to return a JSON action to answer, clarify, or search.
-Each request also includes the current date and time in the API server's
-timezone. When Gemini returns a `search` action, the chat API calls
-`/semantic-search` internally and searches up to three web pages by default.
+The chat API asks the selected provider to return a JSON action to answer,
+clarify, or search. Each request also includes the current date and time in the
+API server's timezone. When the provider returns a `search` action, the chat API
+calls `/semantic-search` internally and searches up to ten web pages by default.
 
 The semantic-search endpoint runs the complete web retrieval flow. It accepts a
 query and optional search, chunking, and embedding settings:
@@ -274,7 +284,7 @@ The response includes ranked results with source metadata and relevance scores;
 each matching chunk remains a separate result. It also includes counts
 for searched pages and chunks, and any pages that could not be scraped.
 `step_timings` reports server-side elapsed seconds for search, scrape, chunking,
-embedding, and ranking. A failed page does not prevent other search results
+and ranking. A failed page does not prevent other search results
 from being processed. The ranked results are returned in the API response
 and are no longer saved to a file.
 
@@ -320,8 +330,9 @@ curl -X POST http://127.0.0.1:8000/ranking \
 ```
 
 The response contains the documents sorted from most to least relevant, with
-their original metadata and a `relevance_score`. The endpoint reuses the
-embedding service and model from `POST /embeddings`.
+their original metadata and a `relevance_score`. Documents are first ranked by
+BM25 and date proximity, then reranked by a cross-encoder with date proximity
+boosting the final score.
 
 The search endpoint accepts `q` (required), `max_results` (1–50, default 1),
 `region` (default `wt-wt`), and `safesearch` (`off`, `moderate`, or `strict`).
@@ -347,13 +358,15 @@ currently live under `app/services`; the active routes are registered in
 - `app/routers/embeddings.py` — `/embeddings`, `/embeddings/single`, and `/ranking` API routes
 - `app/routers/semantic_search.py` — `/semantic-search` API route
 - `app/routers/health.py` — `/health` route
-- `app/services/search.py` — Google web search through SerpApi
+- `app/services/search.py` — DuckDuckGo web search through SerpApi
 - `app/services/scrape.py` — webpage extraction with Trafilatura
 - `app/services/embeddings.py` — dense embedding logic
-- `app/services/ranking.py` — cosine-relevance ranking logic
+- `app/services/ranking.py` — BM25 and date-priority ranking logic
 - `app/services/semantic_search.py` — end-to-end search/scrape/chunk/rank flow
 - `app/services/chunks.py` — paragraph-aware chunking logic
-- `app/services/gemini.py` — Gemini chat integration and system prompt rules
+- `app/services/chat.py` — shared provider-independent chat and RAG orchestration
+- `app/services/gemini.py` — Gemini chat integration
+- `app/services/groq.py` — Groq chat integration
 - `app/services/markdown_export.py` — load ranked chunks and render them as Markdown
 - `app/static/` — frontend assets for the chat UI
 - `test/` — console scripts and validation helpers

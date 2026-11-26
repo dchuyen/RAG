@@ -54,7 +54,7 @@ def print_results(result: dict[str, Any], client_wait_seconds: float) -> None:
     print(f"- Search: {result['step_timings']['search_seconds']:.3f} giây")
     print(f"- Scrape (tổng các trang): {result['step_timings']['scrape_seconds']:.3f} giây")
     print(f"- Chunks: {result['step_timings']['chunk_seconds']:.3f} giây")
-    print(f"- Embeddings: {result['step_timings']['embedding_seconds']:.3f} giây")
+    print("- Embeddings: đã tắt trong semantic search")
     print(f"- Ranking: {result['step_timings']['ranking_seconds']:.3f} giây")
     print(f"- Tổng thời gian chờ API: {client_wait_seconds:.3f} giây")
 
@@ -77,7 +77,7 @@ def main() -> int:
         nargs="?",
         help="Nội dung tìm kiếm; nếu bỏ trống, chương trình sẽ hỏi.",
     )
-    parser.add_argument("--max-results", type=int, default=3, choices=range(1, 51))
+    parser.add_argument("--max-results", type=int, default=10, choices=range(1, 51))
     parser.add_argument("--region", default="vn-vi", help="Mã vùng tìm kiếm")
     parser.add_argument(
         "--safesearch",

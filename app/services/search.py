@@ -1,6 +1,7 @@
 import logging
 import os
 from typing import Literal
+from urllib.parse import urlsplit
 
 import requests
 from dotenv import load_dotenv
@@ -15,7 +16,7 @@ _SERPAPI_SEARCH_URL = "https://serpapi.com/search.json"
 
 def search_web(
     q: str,
-    max_results: int = 3,
+    max_results: int = 10,
     region: str = "vn-vi",
     safesearch: Literal["off", "moderate", "strict"] = "moderate",
 ) -> list[str]:
@@ -34,21 +35,19 @@ def search_web(
 
     if not region or region == "wt-wt":
         region = "vn-vi"
-    region_parts = region.split("-", maxsplit=1)
-    country = region_parts[0].lower()
-    language = region_parts[1].lower() if len(region_parts) > 1 else "vi"
+    duckduckgo_region = "vn-en" if region.lower() == "vn-vi" else region.lower()
+    safe_search = {"off": -2, "moderate": -1, "strict": 1}[safesearch]
 
     try:
         response = requests.get(
             _SERPAPI_SEARCH_URL,
             params={
-                "engine": "google",
+                "engine": "duckduckgo",
                 "q": query,
                 "api_key": api_key,
-                "gl": country,
-                "hl": language,
-                "safe": "off" if safesearch == "off" else "active",
-                "num": max_results,
+                "kl": duckduckgo_region,
+                "safe": safe_search,
+                "m": min(max_results, 50),
             },
             timeout=(5, 20),
         )
@@ -99,10 +98,21 @@ def search_web(
         if not isinstance(item, dict):
             continue
         link = item.get("link")
-        if isinstance(link, str) and link.startswith(("http://", "https://")) and link not in seen:
-            links.append(link)
-            seen.add(link)
-            if len(links) >= max_results:
-                break
+        if not isinstance(link, str) or not link.startswith(("http://", "https://")):
+            continue
+
+        try:
+            hostname = (urlsplit(link).hostname or "").lower()
+        except ValueError:
+            continue
+        if hostname in {"google.com", "www.google.com"} or hostname.endswith(".google.com"):
+            continue
+        if link in seen:
+            continue
+
+        links.append(link)
+        seen.add(link)
+        if len(links) >= max_results:
+            break
 
     return links

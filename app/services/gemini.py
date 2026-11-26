@@ -1,16 +1,13 @@
-import json
 import os
-from datetime import datetime
-from typing import Any, Literal
+from typing import Any
 from urllib.parse import quote
 
 import requests
 from dotenv import load_dotenv
 from fastapi import HTTPException
 
-from app.services.semantic_search import semantic_search
-from app.services.markdown_export import render_documents_as_markdown
-from app.services.system_rule import SYSTEM_RULE
+from app.services.chat import chat_with_provider
+from app.services.ranking import PRE_RERANK_COUNT, RESULT_COUNT
 
 load_dotenv()
 
@@ -130,49 +127,18 @@ def _call_gemini(
     }
 
 
-def _parse_assistant_action(
-    content: str,
-) -> tuple[Literal["answer", "clarify", "search"], str]:
-    try:
-        payload = json.loads(content)
-    except json.JSONDecodeError as exc:
-        raise HTTPException(
-            status_code=502,
-            detail="Gemini API returned an invalid action response.",
-        ) from exc
-
-    if not isinstance(payload, dict):
-        raise HTTPException(status_code=502, detail="Gemini API returned an invalid action response.")
-
-    action = payload.get("action")
-    field_by_action = {"answer": "answer", "clarify": "question", "search": "query"}
-    if not isinstance(action, str) or action not in field_by_action:
-        raise HTTPException(status_code=502, detail="Gemini API returned an unknown action.")
-
-    value = payload.get(field_by_action[action])
-    if not isinstance(value, str) or not value.strip():
-        raise HTTPException(
-            status_code=502,
-            detail=f"Gemini API returned an empty {field_by_action[action]}.",
-        )
-    return action, value.strip()
-
-
-def _format_search_results(search_response: dict[str, Any], top_k: int = 3) -> str:
-    results = search_response.get("results", [])
-    if not results:
-        return "Không tìm thấy tài liệu phù hợp. Hãy nói rõ là chưa tìm thấy nguồn để xác nhận."
-
-    sorted_results = sorted(results, key=lambda result: result["relevance_score"], reverse=True)
-    top_results = sorted_results[:top_k]
-    return render_documents_as_markdown(top_results)
-
-
 def chat_with_gemini(
     messages: list[dict[str, str]],
     model: str = DEFAULT_MODEL,
     temperature: float = 0.7,
     max_tokens: int | None = None,
+    web_search_enabled: bool = True,
+    max_web_pages: int = 10,
+    use_cross_encoder: bool = True,
+    cache_lookup_enabled: bool = False,
+    cache_write_enabled: bool = False,
+    pre_rerank_count: int = PRE_RERANK_COUNT,
+    result_count: int = RESULT_COUNT,
 ) -> dict[str, Any]:
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
@@ -180,63 +146,19 @@ def chat_with_gemini(
             status_code=503,
             detail="GEMINI_API_KEY is not configured.",
         )
-
-    request_messages = [
-        {
-            "role": "system",
-            "content": (
-                f"{SYSTEM_RULE}\n"
-                "Thời gian hiện tại theo múi giờ máy chủ là "
-                f"{datetime.now().astimezone().isoformat(timespec='seconds')}."
-            ),
-        },
-        *messages,
-    ]
-    result = _call_gemini(
-        api_key,
-        model,
-        temperature,
-        max_tokens,
-        request_messages,
-        json_mode=True,
+    return chat_with_provider(
+        provider_name="Gemini",
+        api_key=api_key,
+        messages=messages,
+        model=model,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        generate_response=_call_gemini,
+        web_search_enabled=web_search_enabled,
+        max_web_pages=max_web_pages,
+        use_cross_encoder=use_cross_encoder,
+        cache_lookup_enabled=cache_lookup_enabled,
+        cache_write_enabled=cache_write_enabled,
+        pre_rerank_count=pre_rerank_count,
+        result_count=result_count,
     )
-    action, action_value = _parse_assistant_action(result["content"])
-    system_data = None
-    search_query = None
-    search_action = None
-    search_results = None
-
-    if action == "search":
-        search_query = action_value
-        search_action = result["content"]
-        search_response = semantic_search(query=search_query)
-        search_results = search_response.get("results", [])[:3]
-        system_data = _format_search_results(search_response)
-        request_messages.extend(
-            [
-                {"role": "assistant", "content": result["content"]},
-                {
-                    "role": "user",
-                    "content": (
-                        f"Kết quả semantic search cho truy vấn '{search_query}':\n"
-                        f"{system_data}\n\n"
-                        "Hãy trả lời câu hỏi ban đầu dựa trên các nguồn này. "
-                        "Không phát ra yêu cầu search lần nữa trong lượt trả lời này."
-                    ),
-                },
-            ]
-        )
-        result = _call_gemini(api_key, model, temperature, max_tokens, request_messages)
-        message = result["content"]
-    else:
-        message = action_value
-
-    return {
-        "message": message,
-        "model": model,
-        "usage": result["usage"],
-        "search_query": search_query,
-        "search_action": search_action,
-        "search_results": search_results,
-        "system_data": system_data,
-    }

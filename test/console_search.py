@@ -1,6 +1,6 @@
 import argparse
 import sys
-from padaaecd86ea29847db6bac3958360f7fd64e03d09a54ecabf99b0800cd631ce97thlib import Path
+from pathlib import Path
 
 from fastapi import HTTPException
 
@@ -38,9 +38,9 @@ def main() -> None:
         "--max-results",
         type=int,
         choices=range(1, 51),
-        default=5,
+        default=10,
         metavar="1-50",
-        help="Số kết quả muốn lấy (mặc định: 5)",
+        help="Số kết quả muốn lấy (mặc định: 10)",
     )
     parser.add_argument("--region", default="vn-vi", help="Mã vùng tìm kiếm")
     parser.add_argument(

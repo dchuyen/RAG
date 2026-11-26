@@ -2,9 +2,9 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#f3f0e8">
-    <title>Maison de Recherche · Brutalism</title>
-    <link rel="stylesheet" href="/static/gemini_chat.css?v=11">
+    <meta name="theme-color" content="#f2f2f0">
+    <title>Maison de Recherche</title>
+    <link rel="stylesheet" href="/static/gemini_chat.css?v=24">
   </head>
   <body>
     <main class="shell">
@@ -25,23 +25,82 @@
         <header>
           <div class="brand">
             <button class="sidebar-toggle" id="sidebar-toggle" type="button" aria-label="Mở lịch sử chat" aria-expanded="false" aria-controls="conversation-library">☰</button>
-            <div class="logo" aria-hidden="true">R</div>
-            <div>
+            <div class="brand-copy">
               <h1>Maison de Recherche</h1>
-              <p class="subtitle">Câu hỏi sắc nét, câu trả lời rõ ràng.</p>
             </div>
           </div>
           <div class="header-actions">
+            <button class="settings-toggle" id="settings-toggle" type="button" aria-label="Cài đặt tìm kiếm web" title="Cài đặt tìm kiếm web">⚙</button>
             <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Chuyển sang giao diện tối" aria-pressed="false" title="Chuyển giao diện tối/sáng">☾</button>
           </div>
         </header>
+        <dialog class="settings-dialog" id="settings-dialog" aria-labelledby="settings-title">
+          <form class="settings-form" id="settings-form">
+            <div class="settings-heading">
+              <div>
+                <p class="eyebrow">Tìm kiếm</p>
+                <h2 id="settings-title">Cài đặt web</h2>
+              </div>
+              <button class="settings-close" id="settings-close" type="button" aria-label="Đóng cài đặt">×</button>
+            </div>
+            <label class="settings-row" for="web-search-enabled">
+              <span>
+                <strong>Tìm kiếm trên web</strong>
+                <small>Cho phép mô hình tìm và trích xuất dữ liệu trang web.</small>
+              </span>
+              <input id="web-search-enabled" type="checkbox" role="switch">
+            </label>
+            <label class="settings-row settings-number" for="web-search-max-pages">
+              <span>
+                <strong>Số trang web</strong>
+                <small>Giới hạn số trang được tìm và lấy dữ liệu cho mỗi truy vấn.</small>
+              </span>
+              <input id="web-search-max-pages" type="number" min="1" max="50" step="1" value="10">
+            </label>
+            <label class="settings-row settings-number" for="pre-rerank-count">
+              <span>
+                <strong>Số chunk đem đi xếp hạng</strong>
+                <small>Số đoạn tốt nhất theo từ khóa và ngày được đưa vào Cross-Encoder.</small>
+              </span>
+              <input id="pre-rerank-count" type="number" min="1" max="50" step="1" value="5">
+            </label>
+            <label class="settings-row settings-number" for="result-count">
+              <span>
+                <strong>Số chunk cuối cùng gửi AI</strong>
+                <small>Số đoạn được giữ lại sau xếp hạng và đưa vào ngữ cảnh trả lời.</small>
+              </span>
+              <input id="result-count" type="number" min="1" max="50" step="1" value="3">
+            </label>
+            <label class="settings-row" for="cross-encoder-enabled">
+              <span>
+                <strong>Cross-Encoder</strong>
+                <small>Dùng mô hình xếp hạng lại kết quả để tăng độ chính xác.</small>
+              </span>
+              <input id="cross-encoder-enabled" type="checkbox" role="switch">
+            </label>
+            <label class="settings-row" for="cache-lookup-enabled">
+              <span>
+                <strong>Tìm trong cache</strong>
+                <small>Tái sử dụng kết quả tìm kiếm đã lưu trước đó khi phù hợp.</small>
+              </span>
+              <input id="cache-lookup-enabled" type="checkbox" role="switch">
+            </label>
+            <label class="settings-row" for="cache-write-enabled">
+              <span>
+                <strong>Lưu kết quả vào cache</strong>
+                <small>Lưu kết quả semantic search để dùng lại trong các lượt sau.</small>
+              </span>
+              <input id="cache-write-enabled" type="checkbox" role="switch">
+            </label>
+            <button class="settings-save" id="settings-save" type="button">Lưu cài đặt</button>
+          </form>
+        </dialog>
 
         <div class="conversation-wrap">
           <section class="conversation" id="conversation" aria-live="polite">
             <div class="empty" id="empty">
               <div>
                 <p class="eyebrow">Bắt đầu cuộc trò chuyện</p>
-                <strong>Khám phá câu trả lời với phong cách sáng tạo.</strong>
                 <p>Đặt câu hỏi về bất kỳ chủ đề nào bạn đang quan tâm. Mỗi ý tưởng được trình bày rõ ràng, thanh lịch và dễ theo dõi.</p>
                 <div class="suggestions" aria-label="Câu hỏi gợi ý">
                   <button class="suggestion" type="button">Tóm tắt nội dung chính</button>
@@ -52,7 +111,6 @@
             </div>
           </section>
           <nav class="conversation-navigation" id="conversation-navigation" aria-label="Điều hướng cuộc trò chuyện" hidden>
-            <button id="scroll-to-top" type="button" aria-label="Lên đầu cuộc trò chuyện" title="Lên đầu cuộc trò chuyện" disabled>↑</button>
             <button id="scroll-to-bottom" type="button" aria-label="Xuống cuối cuộc trò chuyện" title="Xuống cuối cuộc trò chuyện">↓</button>
           </nav>
         </div>
@@ -60,6 +118,7 @@
         <form class="composer" id="chat-form">
           <textarea id="prompt" rows="2" placeholder="Bạn đang muốn tìm hiểu điều gì?" aria-label="Tin nhắn" required></textarea>
           <div class="controls">
+            <span class="provider-name">Groq</span>
             <span class="hint">Enter để gửi · Shift+Enter xuống dòng</span>
             <button class="send" id="send" type="submit">Gửi</button>
           </div>
@@ -68,6 +127,6 @@
       </section>
     </main>
 
-    <script src="/static/gemini_chat.js?v=9" defer></script>
+    <script type="module" src="/static/gemini_chat.js?v=23"></script>
   </body>
 </html>
