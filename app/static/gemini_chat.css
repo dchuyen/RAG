@@ -714,6 +714,16 @@ body.theme-dark .system-data { border-color: var(--line); }
 .message.user .bubble code { background: var(--accent-soft); }
 .message.user .bubble pre { background: rgba(255,255,255,0.02); }
 .message.error .bubble { border-color: var(--line); color: var(--ink); }
+.message.error .retry-button {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-size: 12px;
+}
+.message.error .retry-button:hover { background: var(--accent); }
 
 .composer {
   width: min(760px, 100%);

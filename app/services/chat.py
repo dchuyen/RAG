@@ -1,7 +1,7 @@
 import json
 from datetime import datetime
 from time import perf_counter
-from typing import Any, Callable, Literal
+from typing import Any, Callable, Iterator, Literal
 
 from fastapi import HTTPException
 
@@ -206,3 +206,165 @@ def chat_with_provider(
         "search_cached_query": search_cached_query,
         "system_data": system_data,
     }
+
+
+def stream_chat_with_provider(
+    provider_name: str,
+    api_key: str,
+    messages: list[dict[str, str]],
+    model: str,
+    temperature: float,
+    max_tokens: int | None,
+    generate_response: Callable[..., dict[str, Any]],
+    generate_response_stream: Callable[..., Iterator[str]],
+    web_search_enabled: bool = True,
+    max_web_pages: int = 10,
+    use_cross_encoder: bool = True,
+    cache_lookup_enabled: bool = False,
+    cache_write_enabled: bool = False,
+    pre_rerank_count: int = PRE_RERANK_COUNT,
+    result_count: int = RESULT_COUNT,
+) -> Iterator[dict[str, Any]]:
+    request_started = perf_counter()
+    search_policy = (
+        "Tìm kiếm web đã bị TẮT cho lượt này. Không được chọn hành động search."
+        if not web_search_enabled
+        else "Tìm kiếm web đã được BẬT."
+    )
+    request_messages = [
+        {
+            "role": "system",
+            "content": (
+                f"{SYSTEM_RULE}\n"
+                f"{search_policy}\n"
+                "Thời gian hiện tại theo múi giờ máy chủ là "
+                f"{datetime.now().astimezone().isoformat(timespec='seconds')}."
+            ),
+        },
+        *messages,
+    ]
+    action_generation_started = perf_counter()
+    result = generate_response(
+        api_key,
+        model,
+        temperature,
+        max_tokens,
+        request_messages,
+        json_mode=True,
+    )
+    action_generation_seconds = perf_counter() - action_generation_started
+    action, action_value = _parse_assistant_action(result["content"], provider_name)
+    system_data = None
+    search_query = None
+    search_action = None
+    search_results = None
+    search_timings = None
+    search_cache_hit = None
+    search_cache_cosine_score = None
+    search_cached_query = None
+    rag_total_seconds = None
+
+    if action == "search" and web_search_enabled:
+        search_query = action_value
+        search_action = result["content"]
+        rag_started = perf_counter()
+        search_response = semantic_search(
+            query=search_query,
+            max_results=max_web_pages,
+            use_cross_encoder=use_cross_encoder,
+            cache_lookup_enabled=cache_lookup_enabled,
+            cache_write_enabled=cache_write_enabled,
+            pre_rerank_count=pre_rerank_count,
+            result_count=result_count,
+        )
+        rag_total_seconds = perf_counter() - rag_started
+        search_results = search_response.get("results", [])[:result_count]
+        search_timings = search_response.get("step_timings")
+        search_cache_hit = search_response.get("cache_hit", False)
+        search_cache_cosine_score = search_response.get("cache_cosine_score")
+        search_cached_query = search_response.get("cached_query")
+        system_data = _format_search_results(search_response, top_k=result_count)
+        request_messages.extend(
+            [
+                {"role": "assistant", "content": result["content"]},
+                {
+                    "role": "user",
+                    "content": (
+                        f"Kết quả semantic search cho truy vấn '{search_query}':\n"
+                        f"{system_data}\n\n"
+                        "Hãy trả lời câu hỏi ban đầu dựa trên các nguồn này. "
+                        "Không phát ra yêu cầu search lần nữa trong lượt trả lời này."
+                    ),
+                },
+            ]
+        )
+    elif action == "search":
+        request_messages.extend(
+            [
+                {"role": "assistant", "content": result["content"]},
+                {
+                    "role": "user",
+                    "content": (
+                        "Tìm kiếm web đã bị tắt. Không được tìm kiếm hay bịa nguồn. "
+                        "Hãy trả lời câu hỏi ban đầu bằng kiến thức và ngữ cảnh hiện có "
+                        "hoặc hỏi lại nếu cần làm rõ."
+                    ),
+                },
+            ]
+        )
+    else:
+        request_messages.extend(
+            [
+                {"role": "assistant", "content": result["content"]},
+                {
+                    "role": "user",
+                    "content": (
+                        "Hãy chuyển câu trả lời dự kiến trong JSON ở lượt trước thành "
+                        "phản hồi trực tiếp, đầy đủ, không JSON."
+                        if action == "answer"
+                        else "Hãy hỏi người dùng câu hỏi làm rõ trong JSON ở lượt trước, "
+                        "chỉ trả lại câu hỏi, không JSON."
+                    ),
+                },
+            ]
+        )
+
+    yield {
+        "type": "metadata",
+        "system_data": system_data,
+        "search_query": search_query,
+        "search_action": search_action,
+        "search_results": search_results,
+        "search_timings": search_timings,
+        "search_cache_hit": search_cache_hit,
+        "search_cache_cosine_score": search_cache_cosine_score,
+        "search_cached_query": search_cached_query,
+    }
+
+    answer_generation_started = perf_counter()
+    has_content = False
+    for content in generate_response_stream(
+        api_key,
+        model,
+        temperature,
+        max_tokens,
+        request_messages,
+    ):
+        if not content:
+            continue
+        has_content = True
+        yield {"type": "chunk", "content": content}
+    if not has_content:
+        raise HTTPException(
+            status_code=502,
+            detail=f"{provider_name} API response did not contain text content.",
+        )
+
+    chat_timings = {
+        "action_generation_seconds": action_generation_seconds,
+        "answer_generation_seconds": perf_counter() - answer_generation_started,
+        "server_total_seconds": perf_counter() - request_started,
+    }
+    if rag_total_seconds is not None:
+        chat_timings["rag_total_seconds"] = rag_total_seconds
+    yield {"type": "done", "model": model, "chat_timings": chat_timings}

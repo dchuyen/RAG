@@ -20,6 +20,65 @@ const conversationState = {
   currentConversationId: null,
 };
 
+async function readChatStream(response, onChunk) {
+  if (!response.body) throw new Error("Trình duyệt không hỗ trợ đọc phản hồi streaming.");
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let metadata = null;
+  let chatTimings = null;
+  let completed = false;
+
+  function processLine(line) {
+    if (!line.trim()) return;
+    let event;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      throw new Error("Dữ liệu streaming từ máy chủ không hợp lệ.");
+    }
+
+    if (event.type === "metadata") {
+      metadata = event;
+    } else if (event.type === "chunk" && typeof event.content === "string") {
+      onChunk(event.content);
+    } else if (event.type === "done") {
+      completed = true;
+      chatTimings = event.chat_timings;
+    } else if (event.type === "error") {
+      throw new Error(typeof event.detail === "string" ? event.detail : "Không thể tạo phản hồi.");
+    } else {
+      throw new Error("Máy chủ gửi sự kiện streaming không hợp lệ.");
+    }
+  }
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) {
+        buffer += decoder.decode();
+        break;
+      }
+      buffer += decoder.decode(value, { stream: true });
+      let newline = buffer.indexOf("\n");
+      while (newline !== -1) {
+        processLine(buffer.slice(0, newline));
+        buffer = buffer.slice(newline + 1);
+        newline = buffer.indexOf("\n");
+      }
+    }
+    if (buffer.trim()) processLine(buffer);
+  } finally {
+    reader.releaseLock();
+  }
+
+  if (!metadata || !completed) {
+    throw new Error("Phản hồi streaming bị kết thúc trước khi hoàn tất.");
+  }
+  return { metadata, chatTimings };
+}
+
 function closeSidebar() {
   shell.classList.remove("sidebar-open");
   sidebarToggle.setAttribute("aria-expanded", "false");
@@ -79,17 +138,17 @@ document.querySelectorAll(".suggestion").forEach((button) => {
   });
 });
 
-form.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const content = promptInput.value.trim();
+async function sendMessage(content, isRetry = false) {
   if (!content || sendButton.disabled) return;
 
   if (!conversationState.currentConversationId) {
     conversationState.currentConversationId = conversationLibrary.createConversationId();
   }
   history.push({ role: "user", content });
-  messageView.addMessage("user", content);
-  promptInput.value = "";
+  if (!isRetry) {
+    messageView.addMessage("user", content);
+    promptInput.value = "";
+  }
   sendButton.disabled = true;
   sendButton.textContent = "...";
   conversationLibrary.refreshSavedConversations();
@@ -110,9 +169,10 @@ form.addEventListener("submit", async (event) => {
   pending.querySelector(".message-label").append(timer);
   updateTimer();
   const timerInterval = window.setInterval(updateTimer, 100);
+  let streamedMessage = "";
 
   try {
-    const response = await fetch(`/chat/${provider}`, {
+    const response = await fetch(`/chat/${provider}/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -124,11 +184,33 @@ form.addEventListener("submit", async (event) => {
         ...settings.getRequestSettings(),
       }),
     });
-    const result = await response.json();
     if (!response.ok) {
-      const detail = typeof result.detail === "string" ? result.detail : JSON.stringify(result.detail);
+      let errorPayload = {};
+      try {
+        errorPayload = await response.json();
+      } catch {
+        errorPayload = {};
+      }
+      const detail = typeof errorPayload.detail === "string"
+        ? errorPayload.detail
+        : JSON.stringify(errorPayload.detail);
       throw new Error(detail || `HTTP ${response.status}`);
     }
+    const bubble = pending.querySelector(".bubble");
+    const { metadata, chatTimings: streamedChatTimings } = await readChatStream(
+      response,
+      (chunk) => {
+        streamedMessage += chunk;
+        bubble.textContent = streamedMessage;
+        updateConversationNavigation();
+        scrollConversationToBottom("auto");
+      },
+    );
+    const result = {
+      ...metadata,
+      chat_timings: streamedChatTimings,
+      message: streamedMessage,
+    };
     if (typeof result.message !== "string") {
       throw new Error("Phản hồi API không đúng định dạng chat.");
     }
@@ -167,7 +249,6 @@ form.addEventListener("submit", async (event) => {
       searchCachedQuery,
     });
     conversationLibrary.persistCurrentConversation();
-    const bubble = pending.querySelector(".bubble");
     messageView.renderAssistantResponse(bubble, assistantMessage, {
       systemData,
       searchQuery,
@@ -182,14 +263,31 @@ form.addEventListener("submit", async (event) => {
     updateConversationNavigation();
     scrollConversationToBottom();
   } catch (error) {
-    history.pop();
-    pending.remove();
+    if (history.at(-1)?.role === "assistant") history.pop();
+    if (history.at(-1)?.role === "user") history.pop();
+    if (streamedMessage) {
+      pending.querySelector(".bubble").textContent = streamedMessage;
+    } else {
+      pending.remove();
+    }
     const errorMessage = messageView.addMessage(
       "assistant",
       `Không gửi được tin nhắn: ${error.message}`,
       true,
     );
     errorMessage.querySelector(".message-label").append(timer);
+    const retryButton = document.createElement("button");
+    retryButton.className = "retry-button";
+    retryButton.type = "button";
+    retryButton.textContent = "Thử lại";
+    retryButton.setAttribute("aria-label", "Thử gửi lại tin nhắn cho Groq");
+    retryButton.addEventListener("click", () => {
+      if (sendButton.disabled) return;
+      errorMessage.remove();
+      pending.remove();
+      void sendMessage(content, true);
+    });
+    errorMessage.querySelector(".bubble").append(document.createElement("br"), retryButton);
   } finally {
     window.clearInterval(timerInterval);
     updateTimer();
@@ -199,6 +297,11 @@ form.addEventListener("submit", async (event) => {
     conversationLibrary.refreshSavedConversations();
     promptInput.focus();
   }
+}
+
+form.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void sendMessage(promptInput.value.trim());
 });
 
 promptInput.addEventListener("keydown", (event) => {

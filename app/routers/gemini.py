@@ -1,10 +1,16 @@
+import json
 from typing import Any, Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
+from fastapi.responses import StreamingResponse
 
 from app.services.gemini import DEFAULT_MODEL, chat_with_gemini
-from app.services.groq import DEFAULT_MODEL as GROQ_DEFAULT_MODEL, chat_with_groq
+from app.services.groq import (
+    DEFAULT_MODEL as GROQ_DEFAULT_MODEL,
+    chat_with_groq,
+    stream_chat_with_groq,
+)
 from app.services.ranking import PRE_RERANK_COUNT, RESULT_COUNT
 
 router = APIRouter()
@@ -60,4 +66,35 @@ def groq_chat(request: ChatRequest) -> dict[str, Any]:
         cache_write_enabled=request.cache_write_enabled,
         pre_rerank_count=request.pre_rerank_count,
         result_count=request.result_count,
+    )
+
+
+@router.post("/chat/groq/stream")
+def groq_chat_stream(request: ChatRequest) -> StreamingResponse:
+    def events():
+        try:
+            yield from stream_chat_with_groq(
+                messages=[message.model_dump() for message in request.messages],
+                model=request.model or GROQ_DEFAULT_MODEL,
+                temperature=request.temperature,
+                max_tokens=request.max_tokens,
+                web_search_enabled=request.web_search_enabled,
+                max_web_pages=request.max_web_pages,
+                use_cross_encoder=request.use_cross_encoder,
+                cache_lookup_enabled=request.cache_lookup_enabled,
+                cache_write_enabled=request.cache_write_enabled,
+                pre_rerank_count=request.pre_rerank_count,
+                result_count=request.result_count,
+            )
+        except HTTPException as exc:
+            yield {"type": "error", "detail": exc.detail}
+
+    def encode_events():
+        for event in events():
+            yield f"{json.dumps(event, ensure_ascii=False)}\n"
+
+    return StreamingResponse(
+        encode_events(),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

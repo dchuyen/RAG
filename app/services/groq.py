@@ -1,11 +1,12 @@
+import json
 import os
-from typing import Any
+from typing import Any, Iterator
 
 import requests
 from dotenv import load_dotenv
 from fastapi import HTTPException
 
-from app.services.chat import chat_with_provider
+from app.services.chat import chat_with_provider, stream_chat_with_provider
 from app.services.ranking import PRE_RERANK_COUNT, RESULT_COUNT
 
 load_dotenv()
@@ -94,6 +95,111 @@ def _call_groq(
     }
 
 
+def _call_groq_stream(
+    api_key: str,
+    model: str,
+    temperature: float,
+    max_tokens: int | None,
+    messages: list[dict[str, str]],
+) -> Iterator[str]:
+    request_body: dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+        "temperature": temperature,
+        "stream": True,
+    }
+    if max_tokens is not None:
+        request_body["max_tokens"] = max_tokens
+
+    try:
+        response_context = requests.post(
+            GROQ_CHAT_COMPLETIONS_URL,
+            headers={"Authorization": f"Bearer {api_key}"},
+            json=request_body,
+            stream=True,
+            timeout=(10, 120),
+        )
+    except requests.RequestException as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Could not connect to the Groq API.",
+        ) from exc
+
+    with response_context as response:
+        if not response.ok:
+            try:
+                error_payload = response.json()
+            except ValueError:
+                error_payload = {}
+            provider_error = error_payload.get("error") if isinstance(error_payload, dict) else None
+            provider_message = (
+                provider_error.get("message")
+                if isinstance(provider_error, dict) and isinstance(provider_error.get("message"), str)
+                else None
+            )
+            if response.status_code == 429:
+                detail = "Groq đang giới hạn yêu cầu hoặc tài khoản đã chạm hạn mức (HTTP 429)."
+            else:
+                detail = f"Groq API returned HTTP {response.status_code}."
+            if provider_message:
+                detail = f"{detail} {provider_message[:500]}"
+            raise HTTPException(status_code=502, detail=detail)
+
+        has_content = False
+        is_complete = False
+        try:
+            for line in response.iter_lines(chunk_size=1):
+                if isinstance(line, bytes):
+                    line = line.decode("utf-8")
+                if not line or not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    is_complete = True
+                    break
+                try:
+                    chunk = json.loads(data)
+                except ValueError as exc:
+                    raise HTTPException(
+                        status_code=502,
+                        detail="Groq API returned an invalid streaming response.",
+                    ) from exc
+                if not isinstance(chunk, dict):
+                    raise HTTPException(
+                        status_code=502,
+                        detail="Groq API returned an invalid streaming response.",
+                    )
+                provider_error = chunk.get("error")
+                if isinstance(provider_error, dict):
+                    provider_message = provider_error.get("message")
+                    detail = (
+                        f"Groq API streaming error: {provider_message[:500]}"
+                        if isinstance(provider_message, str)
+                        else "Groq API returned a streaming error."
+                    )
+                    raise HTTPException(status_code=502, detail=detail)
+                choices = chunk.get("choices")
+                if not isinstance(choices, list) or not choices:
+                    continue
+                first_choice = choices[0]
+                delta = first_choice.get("delta") if isinstance(first_choice, dict) else None
+                content = delta.get("content") if isinstance(delta, dict) else None
+                if isinstance(content, str) and content:
+                    has_content = True
+                    yield content
+        except requests.RequestException as exc:
+            raise HTTPException(
+                status_code=502,
+                detail="The connection to the Groq API was interrupted.",
+            ) from exc
+
+        if not is_complete or not has_content:
+            raise HTTPException(
+                status_code=502,
+                detail="Groq API returned an incomplete or empty streaming response.",
+            )
+
+
 def chat_with_groq(
     messages: list[dict[str, str]],
     model: str = DEFAULT_MODEL,
@@ -121,6 +227,44 @@ def chat_with_groq(
         temperature=temperature,
         max_tokens=max_tokens,
         generate_response=_call_groq,
+        web_search_enabled=web_search_enabled,
+        max_web_pages=max_web_pages,
+        use_cross_encoder=use_cross_encoder,
+        cache_lookup_enabled=cache_lookup_enabled,
+        cache_write_enabled=cache_write_enabled,
+        pre_rerank_count=pre_rerank_count,
+        result_count=result_count,
+    )
+
+
+def stream_chat_with_groq(
+    messages: list[dict[str, str]],
+    model: str = DEFAULT_MODEL,
+    temperature: float = 0.7,
+    max_tokens: int | None = None,
+    web_search_enabled: bool = True,
+    max_web_pages: int = 10,
+    use_cross_encoder: bool = True,
+    cache_lookup_enabled: bool = False,
+    cache_write_enabled: bool = False,
+    pre_rerank_count: int = PRE_RERANK_COUNT,
+    result_count: int = RESULT_COUNT,
+) -> Iterator[dict[str, Any]]:
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        raise HTTPException(
+            status_code=503,
+            detail="GROQ_API_KEY is not configured.",
+        )
+    yield from stream_chat_with_provider(
+        provider_name="Groq",
+        api_key=api_key,
+        messages=messages,
+        model=model,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        generate_response=_call_groq,
+        generate_response_stream=_call_groq_stream,
         web_search_enabled=web_search_enabled,
         max_web_pages=max_web_pages,
         use_cross_encoder=use_cross_encoder,

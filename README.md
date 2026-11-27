@@ -17,9 +17,9 @@ python3.12 -m venv .venv312
 source .venv312/bin/activate
 python -m pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu "torch==2.15.0+cpu"
 python -m pip install --no-cache-dir -r requirements.txt
-uvicorn app.main:app --reload
+python -m uvicorn app.main:app --reload
 ```
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 Open <http://127.0.0.1:8000/docs> for the interactive API documentation.
 Semantic search hiện không tạo embedding hoặc lưu chunk vào ChromaDB. Kết quả
@@ -54,7 +54,7 @@ Use `--offset` to page through larger collections, for example
 ## Open the chat interface
 
 Configure `GEMINI_API_KEY`, `GROQ_API_KEY`, and `SERPAPI_API_KEY` in `.env`,
-start the API with `uvicorn app.main:app --reload`, then open
+start the API with `python -m uvicorn app.main:app --reload`, then open
 <http://127.0.0.1:8000/chat> in your browser.
 
 If the chat reports `HTTP 429`, the selected provider is rate-limiting requests
@@ -183,7 +183,7 @@ python test/console_embed_rerank.py "tiến độ sân bay Long Thành" \
 Start the API:
 
 ```bash
-uvicorn app.main:app --reload
+python -m uvicorn app.main:app --reload
 ```
 
 Then split text through the console client. The API prefers paragraph boundaries:
@@ -248,7 +248,7 @@ can be supplied in the request:
 
 ```bash
 # Add GEMINI_API_KEY, GROQ_API_KEY, and SERPAPI_API_KEY to .env as needed.
-uvicorn app.main:app --reload
+python -m uvicorn app.main:app --reload
 ```
 
 Then send a Gemini chat request (use `/chat/groq` and `GROQ_API_KEY` for Groq):
